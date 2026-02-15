@@ -1,0 +1,17 @@
+[project]
+name = "dicodex"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ruff>=0.15.1",
+    "selenium>=4.40.0",
+]
+
+[tool.ruff]
+lint.extend-select = ["PTH"]
+
+lint.ignore = [
+    "F401",  # unsused
+]
