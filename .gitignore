@@ -16,3 +16,4 @@ secret.py
 archive_unused/
 chromedriver/
 output/
+.selenium_profile/

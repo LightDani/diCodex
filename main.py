@@ -22,6 +22,7 @@ MAX_PAGINATION_STEPS = 300
 INTERACTION_TIMEOUT_SECONDS = 20
 ASYNC_SCRIPT_TIMEOUT_SECONDS = 240
 FAST_PAGINATION_DELAY_MS = 120
+DEFAULT_MANUAL_LOGIN_TIMEOUT_SECONDS = 300
 
 try:
     from secret import EMAIL, PASSWORD
@@ -52,6 +53,31 @@ def parse_args() -> argparse.Namespace:
         help="Jalankan browser dengan UI (non-headless).",
     )
     parser.add_argument(
+        "--auth-mode",
+        choices=["hybrid", "auto", "manual"],
+        default="hybrid",
+        help=(
+            "Mode autentikasi CodingCamp: "
+            "hybrid (auto jika secret ada, fallback manual), "
+            "auto (paksa auto lalu fallback manual), "
+            "manual (langsung login manual)."
+        ),
+    )
+    parser.add_argument(
+        "--profile-dir",
+        default=".selenium_profile/codingcamp",
+        help=(
+            "Folder Chrome profile persisten untuk menyimpan sesi login "
+            "antar-run."
+        ),
+    )
+    parser.add_argument(
+        "--manual-login-timeout",
+        type=int,
+        default=DEFAULT_MANUAL_LOGIN_TIMEOUT_SECONDS,
+        help="Batas tunggu (detik) untuk proses login manual.",
+    )
+    parser.add_argument(
         "--load-images",
         action="store_true",
         help="Muat gambar normal. Default: gambar diblokir untuk speed.",
@@ -80,6 +106,7 @@ def build_driver(
     headless: bool = False,
     disable_images: bool = False,
     enable_perf_logs: bool = False,
+    user_data_dir: Path | None = None,
 ) -> webdriver.Chrome:
     options = webdriver.ChromeOptions()
     options.page_load_strategy = "eager"
@@ -91,6 +118,10 @@ def build_driver(
     options.add_argument("--disable-notifications")
     options.add_argument("--no-default-browser-check")
     options.add_argument("--no-first-run")
+    if user_data_dir:
+        profile_dir = user_data_dir.expanduser()
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        options.add_argument(f"--user-data-dir={profile_dir.resolve()}")
 
     if disable_images:
         options.add_experimental_option(
@@ -432,6 +463,133 @@ def wait_for_manual_magic_link_login(
         raise TimeoutException(
             "Masih berada di halaman login setelah langkah manual."
         )
+
+
+def is_authenticated(driver: webdriver.Chrome) -> bool:
+    current_url = (driver.current_url or "").lower()
+    if "/login" in current_url:
+        return False
+
+    try:
+        return bool(
+            driver.execute_script(
+                r"""
+                const href = (window.location.href || "").toLowerCase();
+                if (href.includes("/login")) {
+                  return false;
+                }
+                if (document.querySelector("input[type='password']")) {
+                  return false;
+                }
+
+                const normalized = (value) =>
+                  (value || "").replace(/\s+/g, " ").trim().toLowerCase();
+                const hasStudentPicker = Array.from(
+                  document.querySelectorAll("input, button, div, span, label")
+                ).some((el) => {
+                  const text = normalized(el.textContent);
+                  const placeholder = normalized(el.getAttribute("placeholder"));
+                  const ariaLabel = normalized(el.getAttribute("aria-label"));
+                  return (
+                    text.includes("student's name or id") ||
+                    placeholder.includes("student's name or id") ||
+                    ariaLabel.includes("student's name or id")
+                  );
+                });
+
+                const hasAttendanceSection =
+                  document.querySelectorAll("section.attendances").length > 0;
+                return hasStudentPicker || hasAttendanceSection;
+                """
+            )
+        )
+    except Exception:
+        return "/login" not in current_url
+
+
+def wait_for_manual_codingcamp_login(
+    driver: webdriver.Chrome,
+    wait: WebDriverWait,
+    timeout_seconds: int,
+) -> None:
+    timeout = max(1, timeout_seconds)
+    print(
+        "Silakan login manual pada browser Selenium yang terbuka. "
+        f"Script akan menunggu sampai login berhasil (maks {timeout} detik)."
+    )
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if is_authenticated(driver):
+            wait_for_page_ready(driver, wait)
+            return
+        time.sleep(1)
+
+    raise TimeoutException(
+        "Login manual timeout. Masih belum terdeteksi masuk ke dashboard "
+        "CodingCamp sebelum batas waktu."
+    )
+
+
+def perform_codingcamp_auth(args: argparse.Namespace) -> webdriver.Chrome:
+    has_secret = bool(EMAIL and PASSWORD)
+    mode = args.auth_mode
+    should_attempt_auto = mode == "auto" or (mode == "hybrid" and has_secret)
+    initial_headless = should_attempt_auto and not args.headed
+    profile_dir = Path(args.profile_dir)
+
+    driver = build_driver(
+        headless=initial_headless,
+        disable_images=not args.load_images,
+        enable_perf_logs=args.enable_perf_logs,
+        user_data_dir=profile_dir,
+    )
+    wait = WebDriverWait(driver, 30)
+
+    def go_home() -> None:
+        driver.get(CODINGCAMP_URL)
+        wait_for_page_ready(driver, wait)
+
+    try:
+        go_home()
+        if is_authenticated(driver):
+            return driver
+
+        if should_attempt_auto:
+            try:
+                if not has_secret:
+                    raise ValueError(
+                        "EMAIL/PASSWORD kosong; auto-login tidak bisa dijalankan."
+                    )
+
+                click_password_link(driver, wait)
+                login_with_email_password(driver, wait)
+                wait.until(is_authenticated)
+                wait_for_page_ready(driver, wait)
+                return driver
+            except Exception as error:
+                print(
+                    f"Auto-login gagal ({error}). Fallback ke login manual..."
+                )
+
+        if initial_headless:
+            driver.quit()
+            driver = build_driver(
+                headless=False,
+                disable_images=not args.load_images,
+                enable_perf_logs=args.enable_perf_logs,
+                user_data_dir=profile_dir,
+            )
+            wait = WebDriverWait(driver, 30)
+
+        go_home()
+        wait_for_manual_codingcamp_login(
+            driver, wait, args.manual_login_timeout
+        )
+        return driver
+    except Exception:
+        driver.quit()
+        raise
 
 
 def build_attendance_progress_from_dom(
@@ -1426,21 +1584,10 @@ def main() -> None:
         print(f"ASAH attendance reference: {out_path}")
         return
 
-    driver = build_driver(
-        headless=not args.headed,
-        disable_images=not args.load_images,
-        enable_perf_logs=args.enable_perf_logs,
-    )
-    wait = WebDriverWait(driver, 30)
+    driver = perform_codingcamp_auth(args)
 
     try:
-        driver.get(CODINGCAMP_URL)
-        wait_for_page_ready(driver, wait)
-        click_password_link(driver, wait)
-        login_with_email_password(driver, wait)
-        WebDriverWait(driver, 30).until(
-            lambda d: "/login" not in d.current_url
-        )
+        wait = WebDriverWait(driver, 30)
         wait_for_page_ready(driver, wait)
 
         expand_all_student_data(driver)
