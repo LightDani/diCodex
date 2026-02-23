@@ -13,7 +13,8 @@ uv run python main.py
 Pada mode default, script akan:
 1. Menyiapkan browser/driver otomatis.
 2. Login dengan mode `hybrid`.
-3. Mengekstrak data dan menyimpan CSV ke folder `output/`.
+3. Menjalankan pipeline `scrape-transform`.
+4. Menyimpan hasil CSV ke folder `output/`.
 
 ## Kenapa Bisa "Zero Config"
 Saat startup, script mencoba strategi ini berurutan:
@@ -60,6 +61,27 @@ pip install -r requirements.txt
 uv run python main.py
 ```
 
+### Pipeline Mode
+- `--pipeline-mode {scrape-transform,scrape,transform}`
+- Default: `scrape-transform`
+- Catatan: mode `transform` hanya valid untuk `--source codingcamp`.
+
+Perilaku:
+- `scrape-transform`: scrape live lalu transform ke CSV.
+- `scrape`: scrape live saja (JSON).
+- `transform`: transform JSON existing ke CSV tanpa Selenium login.
+
+Contoh:
+```bash
+uv run python main.py --pipeline-mode scrape-transform
+uv run python main.py --pipeline-mode scrape --output-format json
+uv run python main.py --pipeline-mode transform --transform-group CDC-04
+```
+
+Opsi khusus mode `transform`:
+- `--transform-source <path_json>`
+- `--transform-group <id_group>`
+
 ### Mode Login
 - `--auth-mode {hybrid,auto,manual}` (default: `hybrid`)
 - `--profile-dir <path>` (default: `.selenium_profile/codingcamp`)
@@ -77,15 +99,18 @@ uv run python main.py --auth-mode auto
 - `--runtime-dir <path>`: lokasi cache runtime otomatis
   (default: `.runtime/browser`).
 - `--offline`: nonaktifkan download runtime otomatis.
+- `--log-level {DEBUG,INFO,WARNING,ERROR}` (default: `INFO`).
 
 Contoh:
 ```bash
 uv run python main.py --browser-path "C:\\Chrome\\chrome.exe" --driver-path "C:\\Driver\\chromedriver.exe"
 uv run python main.py --offline
+uv run python main.py --log-level DEBUG
 ```
 
 ### Format Output
 - `--output-format {csv,json,both}` (default: `csv`)
+- Berlaku untuk mode scrape/scrape-transform.
 
 Contoh:
 ```bash
@@ -110,11 +135,50 @@ Semua hasil disimpan di `output/`.
 
 File output bersifat statis per group dan akan di-replace jika sudah ada.
 
+## Struktur Project
+Entry point tetap sederhana:
+- `main.py`: launcher utama
+- `etl.py`: transform JSON existing ke CSV
+
+Modul internal sudah dipindah ke package `core/` agar lebih rapih, meliputi:
+- auth/login flow
+- browser/runtime bootstrap
+- extractor DOM dan progress
+- builder export JSON/CSV
+- settings, UI actions, dan util output
+
 ## ETL Offline
 Untuk transform JSON existing tanpa scraping ulang:
 
 ```bash
 uv run python etl.py --group CDC-04
+```
+
+## Quality Checks
+### Validasi Schema CSV Output
+Validasi apakah file CSV output ada dan header kolomnya sesuai contract:
+
+```bash
+uv run python quality_checks.py
+```
+
+### Smoke Test Otomatis
+Menjalankan `main.py --output-format csv` lalu validasi schema CSV:
+
+```bash
+uv run python smoke_test.py
+```
+
+Opsi penting:
+- `--skip-run`: hanya validasi output yang sudah ada.
+- `--run-mode {inprocess,subprocess}` (default: `inprocess`).
+
+Untuk pakai argumen login/runtime yang sama seperti `main.py`, langsung
+tambahkan di belakang command:
+
+```bash
+uv run python smoke_test.py --auth-mode hybrid --headed
+uv run python smoke_test.py --run-mode subprocess --auth-mode hybrid
 ```
 
 ## Catatan

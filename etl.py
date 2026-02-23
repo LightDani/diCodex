@@ -3,12 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from csv_pipeline import (
-    export_tables_to_csv,
-    load_json_payload,
-    resolve_default_json_source,
-    transform_payload_to_tables,
-)
+from core.logging_utils import configure_logging
+from core.transform_runner import run_transform_job
 
 OUTPUT_DIR = Path("output")
 
@@ -37,23 +33,23 @@ def parse_args() -> argparse.Namespace:
         default=OUTPUT_DIR,
         help="Folder output CSV (default: output).",
     )
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Level logging ETL (default: INFO).",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    output_dir = args.output_dir
-    source_path = args.source or resolve_default_json_source(
-        output_dir, args.group
+    configure_logging(args.log_level)
+    run_transform_job(
+        output_dir=args.output_dir,
+        source_path=args.source,
+        group=args.group,
     )
-
-    payload = load_json_payload(source_path)
-    tables = transform_payload_to_tables(payload)
-    row_count_by_file = export_tables_to_csv(tables, output_dir)
-
-    print(f"Sumber JSON: {source_path}")
-    for filename, count in row_count_by_file.items():
-        print(f"- {filename}: {count} baris data")
 
 
 if __name__ == "__main__":
