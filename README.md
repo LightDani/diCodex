@@ -13,7 +13,8 @@ uv run python main.py
 Pada mode default, script akan:
 1. Menyiapkan browser/driver otomatis.
 2. Login dengan mode `hybrid`.
-3. Mengekstrak data dan menyimpan CSV ke folder `output/`.
+3. Menjalankan pipeline `scrape-transform`.
+4. Menyimpan hasil CSV ke folder `output/`.
 
 ## Kenapa Bisa "Zero Config"
 Saat startup, script mencoba strategi ini berurutan:
@@ -63,6 +64,7 @@ uv run python main.py
 ### Pipeline Mode
 - `--pipeline-mode {scrape-transform,scrape,transform}`
 - Default: `scrape-transform`
+- Catatan: mode `transform` hanya valid untuk `--source codingcamp`.
 
 Perilaku:
 - `scrape-transform`: scrape live lalu transform ke CSV.
@@ -167,11 +169,16 @@ Menjalankan `main.py --output-format csv` lalu validasi schema CSV:
 uv run python smoke_test.py
 ```
 
+Opsi penting:
+- `--skip-run`: hanya validasi output yang sudah ada.
+- `--run-mode {inprocess,subprocess}` (default: `inprocess`).
+
 Untuk pakai argumen login/runtime yang sama seperti `main.py`, langsung
 tambahkan di belakang command:
 
 ```bash
 uv run python smoke_test.py --auth-mode hybrid --headed
+uv run python smoke_test.py --run-mode subprocess --auth-mode hybrid
 ```
 
 ## Catatan
