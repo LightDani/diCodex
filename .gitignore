@@ -17,3 +17,4 @@ archive_unused/
 chromedriver/
 output/
 .selenium_profile/
+.runtime/
