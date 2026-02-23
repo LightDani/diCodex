@@ -1,7 +1,7 @@
 # CodingCamp Data Extractor
 
 Script Selenium untuk login ke `codingcamp.dicoding.com`, membuka semua data
-siswa, lalu mengekstrak data mentor + detail semua siswa ke JSON.
+siswa, lalu mengekstrak data mentor + detail semua siswa ke CSV (default).
 
 ## Quick Start
 Perintah paling simpel:
@@ -13,7 +13,7 @@ uv run python main.py
 Pada mode default, script akan:
 1. Menyiapkan browser/driver otomatis.
 2. Login dengan mode `hybrid`.
-3. Mengekstrak data dan menyimpan JSON ke folder `output/`.
+3. Mengekstrak data dan menyimpan CSV ke folder `output/`.
 
 ## Kenapa Bisa "Zero Config"
 Saat startup, script mencoba strategi ini berurutan:
@@ -84,13 +84,38 @@ uv run python main.py --browser-path "C:\\Chrome\\chrome.exe" --driver-path "C:\
 uv run python main.py --offline
 ```
 
+### Format Output
+- `--output-format {csv,json,both}` (default: `csv`)
+
+Contoh:
+```bash
+uv run python main.py --output-format csv
+uv run python main.py --output-format json
+uv run python main.py --output-format both
+```
+
 ## Output
 Semua hasil disimpan di `output/`.
 
-- CodingCamp: `output/codingcamp_<nama_group>_full.json`
+- Default (CSV):
+  - `output/mentor_data.csv`
+  - `output/student.csv`
+  - `output/student_daily_checkin.csv`
+  - `output/student_assignment.csv`
+  - `output/student_attendance.csv`
+  - `output/student_course_progress.csv`
+- Jika `--output-format json` atau `both`:
+  - `output/codingcamp_<nama_group>_full.json`
 - ASAH reference: `output/asah_live_attendance_reference.json`
 
 File output bersifat statis per group dan akan di-replace jika sudah ada.
+
+## ETL Offline
+Untuk transform JSON existing tanpa scraping ulang:
+
+```bash
+uv run python etl.py --group CDC-04
+```
 
 ## Catatan
 - First run bisa lebih lama karena bootstrap runtime.
