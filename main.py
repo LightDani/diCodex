@@ -471,38 +471,84 @@ def is_authenticated(driver: webdriver.Chrome) -> bool:
         return False
 
     try:
-        return bool(
-            driver.execute_script(
-                r"""
-                const href = (window.location.href || "").toLowerCase();
-                if (href.includes("/login")) {
-                  return false;
-                }
-                if (document.querySelector("input[type='password']")) {
-                  return false;
-                }
+        state = driver.execute_script(
+            r"""
+            const href = (window.location.href || "").toLowerCase();
+            const normalized = (value) =>
+              (value || "").replace(/\s+/g, " ").trim().toLowerCase();
 
-                const normalized = (value) =>
-                  (value || "").replace(/\s+/g, " ").trim().toLowerCase();
-                const hasStudentPicker = Array.from(
-                  document.querySelectorAll("input, button, div, span, label")
-                ).some((el) => {
-                  const text = normalized(el.textContent);
-                  const placeholder = normalized(el.getAttribute("placeholder"));
-                  const ariaLabel = normalized(el.getAttribute("aria-label"));
-                  return (
-                    text.includes("student's name or id") ||
-                    placeholder.includes("student's name or id") ||
-                    ariaLabel.includes("student's name or id")
-                  );
-                });
+            const hasPasswordInput = Boolean(
+              document.querySelector("input[type='password']")
+            );
+            const hasEmailInput = Boolean(
+              document.querySelector("input[type='email']")
+            );
+            const hasLoginCta = Array.from(
+              document.querySelectorAll("button, input[type='submit']")
+            ).some((el) => {
+              const text = normalized(el.textContent || el.value);
+              return (
+                text.includes("send magic link") ||
+                text.includes("sign in") ||
+                text.includes("login") ||
+                text.includes("masuk")
+              );
+            });
+            const hasLoginForm = hasPasswordInput || (hasEmailInput && hasLoginCta);
 
-                const hasAttendanceSection =
-                  document.querySelectorAll("section.attendances").length > 0;
-                return hasStudentPicker || hasAttendanceSection;
-                """
-            )
+            const hasStudentPicker = Array.from(
+              document.querySelectorAll("input, button, div, span, label")
+            ).some((el) => {
+              const text = normalized(el.textContent);
+              const placeholder = normalized(el.getAttribute("placeholder"));
+              const ariaLabel = normalized(el.getAttribute("aria-label"));
+              return (
+                text.includes("student's name or id") ||
+                placeholder.includes("student's name or id") ||
+                ariaLabel.includes("student's name or id")
+              );
+            });
+            const hasAttendanceSection =
+              document.querySelectorAll("section.attendances").length > 0;
+
+            let hasFirebaseSession = false;
+            try {
+              for (let i = 0; i < localStorage.length; i += 1) {
+                const key = (localStorage.key(i) || "").toLowerCase();
+                if (key.includes("firebase:authuser")) {
+                  hasFirebaseSession = true;
+                  break;
+                }
+              }
+            } catch (_error) {}
+
+            return {
+              href,
+              has_login_form: hasLoginForm,
+              has_dashboard_signals: hasStudentPicker || hasAttendanceSection,
+              has_firebase_session: hasFirebaseSession,
+            };
+            """
         )
+        if not isinstance(state, dict):
+            return "/login" not in current_url
+
+        if "/login" in str(state.get("href", "")).lower():
+            return False
+
+        if bool(state.get("has_dashboard_signals", False)):
+            return True
+
+        if bool(state.get("has_firebase_session", False)) and not bool(
+            state.get("has_login_form", False)
+        ):
+            return True
+
+        if current_url.startswith(CODINGCAMP_URL) and not bool(
+            state.get("has_login_form", False)
+        ):
+            return True
+        return False
     except Exception:
         return "/login" not in current_url
 
@@ -520,8 +566,18 @@ def wait_for_manual_codingcamp_login(
 
     deadline = time.time() + timeout
     while time.time() < deadline:
+        current_url = (driver.current_url or "").lower()
+        if "/login" not in current_url:
+            try:
+                wait_for_page_ready(driver, wait)
+            except Exception:
+                pass
+            print("Login manual terdeteksi, lanjut ke proses scraping...")
+            return
+
         if is_authenticated(driver):
             wait_for_page_ready(driver, wait)
+            print("Login manual terdeteksi, lanjut ke proses scraping...")
             return
         time.sleep(1)
 
@@ -1589,6 +1645,7 @@ def main() -> None:
     try:
         wait = WebDriverWait(driver, 30)
         wait_for_page_ready(driver, wait)
+        print("Autentikasi selesai. Memulai ekstraksi data...")
 
         expand_all_student_data(driver)
 
