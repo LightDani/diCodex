@@ -22,6 +22,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.ui import WebDriverWait
 
+from csv_pipeline import export_tables_to_csv, transform_payload_to_tables
+
 CODINGCAMP_URL = "https://codingcamp.dicoding.com"
 ASAH_URL = "https://asah.dicoding.com"
 OUTPUT_DIR = Path("output")
@@ -132,6 +134,15 @@ def parse_args() -> argparse.Namespace:
         dest="experimental_fast_daily",
         action="store_false",
         help="Nonaktifkan mode cepat daily-checkins dan pakai mode aman.",
+    )
+    parser.add_argument(
+        "--output-format",
+        choices=["csv", "json", "both"],
+        default="csv",
+        help=(
+            "Format output untuk mode codingcamp: "
+            "csv (default), json, atau both."
+        ),
     )
     return parser.parse_args()
 
@@ -2040,10 +2051,18 @@ def main() -> None:
         group_name = sanitize_filename_part(
             payload["mentor"].get("group", "unknown_group")
         )
-        out_path = OUTPUT_DIR / f"codingcamp_{group_name}_full.json"
-        write_json_replace(out_path, payload)
 
-        print(f"Export JSON: {out_path}")
+        if args.output_format in ("json", "both"):
+            json_path = OUTPUT_DIR / f"codingcamp_{group_name}_full.json"
+            write_json_replace(json_path, payload)
+            print(f"Export JSON: {json_path}")
+
+        if args.output_format in ("csv", "both"):
+            tables = transform_payload_to_tables(payload)
+            row_count_by_file = export_tables_to_csv(tables, OUTPUT_DIR)
+            print("Export CSV:")
+            for filename, count in row_count_by_file.items():
+                print(f"- {filename}: {count} baris data")
     finally:
         driver.quit()
 
