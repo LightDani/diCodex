@@ -117,6 +117,28 @@ Untuk transform JSON existing tanpa scraping ulang:
 uv run python etl.py --group CDC-04
 ```
 
+## Quality Checks
+### Validasi Schema CSV Output
+Validasi apakah file CSV output ada dan header kolomnya sesuai contract:
+
+```bash
+uv run python quality_checks.py
+```
+
+### Smoke Test Otomatis
+Menjalankan `main.py --output-format csv` lalu validasi schema CSV:
+
+```bash
+uv run python smoke_test.py
+```
+
+Untuk pakai argumen login/runtime yang sama seperti `main.py`, langsung
+tambahkan di belakang command:
+
+```bash
+uv run python smoke_test.py --auth-mode hybrid --headed
+```
+
 ## Catatan
 - First run bisa lebih lama karena bootstrap runtime.
 - Saat login manual dibutuhkan, browser otomatis berjalan dalam mode UI
