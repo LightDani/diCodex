@@ -2,19 +2,10 @@
 
 from pathlib import Path
 
-from selenium.webdriver.support.ui import WebDriverWait
-
 from asah_capture import capture_asah_live_attendance_reference
 from browser_runtime import DEFAULT_RUNTIME_DIR
 from cli import parse_args
-from codingcamp_auth import CodingcampAuthOptions, perform_codingcamp_auth
-from csv_pipeline import export_tables_to_csv, transform_payload_to_tables
-from export_builder import build_export_json
-from output_utils import sanitize_filename_part, write_json_replace
-from page_actions import (
-    expand_all_student_data,
-)
-from selenium_ui import wait_for_page_ready
+from codingcamp_capture import run_codingcamp_export
 
 CODINGCAMP_URL = "https://codingcamp.dicoding.com"
 ASAH_URL = "https://asah.dicoding.com"
@@ -55,62 +46,17 @@ def main() -> None:
         print(f"ASAH attendance reference: {out_path}")
         return
 
-    auth_options = CodingcampAuthOptions(
-        auth_mode=args.auth_mode,
-        headed=args.headed,
-        profile_dir=Path(args.profile_dir),
-        load_images=args.load_images,
-        enable_perf_logs=args.enable_perf_logs,
-        browser_path=args.browser_path,
-        driver_path=args.driver_path,
-        runtime_dir=Path(args.runtime_dir).expanduser(),
-        offline=args.offline,
-        manual_login_timeout=args.manual_login_timeout,
-    )
-    driver, login_email_used = perform_codingcamp_auth(
-        auth_options,
-        codingcamp_url=CODINGCAMP_URL,
+    run_codingcamp_export(
+        args,
         email=EMAIL,
         password=PASSWORD,
-        script_timeout_seconds=ASYNC_SCRIPT_TIMEOUT_SECONDS,
+        codingcamp_url=CODINGCAMP_URL,
+        output_dir=OUTPUT_DIR,
+        interaction_timeout_seconds=INTERACTION_TIMEOUT_SECONDS,
+        async_script_timeout_seconds=ASYNC_SCRIPT_TIMEOUT_SECONDS,
+        fast_pagination_delay_ms=FAST_PAGINATION_DELAY_MS,
+        max_pagination_steps=MAX_PAGINATION_STEPS,
     )
-
-    try:
-        wait = WebDriverWait(driver, 30)
-        wait_for_page_ready(driver, wait)
-        print("Autentikasi selesai. Memulai ekstraksi data...")
-
-        expand_all_student_data(
-            driver,
-            interaction_timeout_seconds=INTERACTION_TIMEOUT_SECONDS,
-        )
-
-        payload = build_export_json(
-            driver,
-            login_email=login_email_used,
-            fallback_login_email=EMAIL,
-            use_fast_daily=args.experimental_fast_daily,
-            use_fast_points=True,
-            fast_pagination_delay_ms=FAST_PAGINATION_DELAY_MS,
-            max_pagination_steps=MAX_PAGINATION_STEPS,
-        )
-        group_name = sanitize_filename_part(
-            payload["mentor"].get("group", "unknown_group")
-        )
-
-        if args.output_format in ("json", "both"):
-            json_path = OUTPUT_DIR / f"codingcamp_{group_name}_full.json"
-            write_json_replace(json_path, payload)
-            print(f"Export JSON: {json_path}")
-
-        if args.output_format in ("csv", "both"):
-            tables = transform_payload_to_tables(payload)
-            row_count_by_file = export_tables_to_csv(tables, OUTPUT_DIR)
-            print("Export CSV:")
-            for filename, count in row_count_by_file.items():
-                print(f"- {filename}: {count} baris data")
-    finally:
-        driver.quit()
 
 
 if __name__ == "__main__":
