@@ -11,11 +11,12 @@ from pathlib import Path
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.ui import WebDriverWait
 
 from browser_runtime import DEFAULT_RUNTIME_DIR, create_bootstrapped_driver
+from codingcamp_auth import CodingcampAuthOptions, perform_codingcamp_auth
 from csv_pipeline import export_tables_to_csv, transform_payload_to_tables
+from selenium_ui import click_element, find_first_visible, wait_for_page_ready
 
 CODINGCAMP_URL = "https://codingcamp.dicoding.com"
 ASAH_URL = "https://asah.dicoding.com"
@@ -187,107 +188,6 @@ def student_blocks(page_html: str) -> list[str]:
     return blocks
 
 
-def find_first_visible(
-    driver: webdriver.Chrome, locators: list[tuple[str, str]]
-):
-    for by, value in locators:
-        for element in driver.find_elements(by, value):
-            if element.is_displayed():
-                return element
-    return None
-
-
-def wait_for_page_ready(driver: webdriver.Chrome, wait: WebDriverWait) -> None:
-    wait.until(
-        lambda d: d.execute_script("return document.readyState") == "complete"
-    )
-    wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, "body")))
-
-
-def click_element(driver: webdriver.Chrome, element) -> None:
-    driver.execute_script(
-        "arguments[0].scrollIntoView({block: 'center'});", element
-    )
-    try:
-        element.click()
-    except Exception:
-        driver.execute_script("arguments[0].click();", element)
-
-
-def click_password_link(driver: webdriver.Chrome, wait: WebDriverWait) -> None:
-    locators = [
-        (By.LINK_TEXT, "your password"),
-        (By.XPATH, "//a[normalize-space()='your password']"),
-        (By.XPATH, "//a[contains(normalize-space(.), 'your password')]"),
-    ]
-
-    for locator in locators:
-        try:
-            element = wait.until(ec.element_to_be_clickable(locator))
-            click_element(driver, element)
-            return
-        except TimeoutException:
-            continue
-
-    raise NoSuchElementException(
-        "Link 'your password' tidak ditemukan atau tidak bisa diklik."
-    )
-
-
-def login_with_email_password(
-    driver: webdriver.Chrome, wait: WebDriverWait
-) -> None:
-    wait.until(
-        ec.visibility_of_element_located(
-            (By.CSS_SELECTOR, "input[type='password']")
-        )
-    )
-
-    if not EMAIL or not PASSWORD:
-        raise ValueError(
-            "EMAIL/PASSWORD kosong. Isi file `secret.py` agar bisa login otomatis."
-        )
-
-    email_input = find_first_visible(
-        driver,
-        [
-            (By.CSS_SELECTOR, "input[type='email']"),
-            (By.NAME, "email"),
-            (By.ID, "email"),
-        ],
-    )
-    password_input = find_first_visible(
-        driver,
-        [
-            (By.CSS_SELECTOR, "input[type='password']"),
-            (By.NAME, "password"),
-            (By.ID, "password"),
-        ],
-    )
-    submit_button = find_first_visible(
-        driver,
-        [
-            (By.CSS_SELECTOR, "button[type='submit']"),
-            (By.CSS_SELECTOR, "input[type='submit']"),
-            (
-                By.XPATH,
-                "//button[contains(., 'Sign in') or contains(., 'Login') or contains(., 'Masuk')]",
-            ),
-        ],
-    )
-
-    if not email_input or not password_input or not submit_button:
-        raise NoSuchElementException(
-            "Komponen form login email/password tidak lengkap."
-        )
-
-    email_input.clear()
-    email_input.send_keys(EMAIL)
-    password_input.clear()
-    password_input.send_keys(PASSWORD)
-    click_element(driver, submit_button)
-
-
 def click_from_locators(
     driver: webdriver.Chrome,
     locators: list[tuple[str, str]],
@@ -445,240 +345,6 @@ def wait_for_manual_magic_link_login(
         raise TimeoutException(
             "Masih berada di halaman login setelah langkah manual."
         )
-
-
-def is_authenticated(driver: webdriver.Chrome) -> bool:
-    current_url = (driver.current_url or "").lower()
-    if "/login" in current_url:
-        return False
-
-    try:
-        state = driver.execute_script(
-            r"""
-            const href = (window.location.href || "").toLowerCase();
-            const normalized = (value) =>
-              (value || "").replace(/\s+/g, " ").trim().toLowerCase();
-
-            const hasPasswordInput = Boolean(
-              document.querySelector("input[type='password']")
-            );
-            const hasEmailInput = Boolean(
-              document.querySelector("input[type='email']")
-            );
-            const hasLoginCta = Array.from(
-              document.querySelectorAll("button, input[type='submit']")
-            ).some((el) => {
-              const text = normalized(el.textContent || el.value);
-              return (
-                text.includes("send magic link") ||
-                text.includes("sign in") ||
-                text.includes("login") ||
-                text.includes("masuk")
-              );
-            });
-            const hasLoginForm = hasPasswordInput || (hasEmailInput && hasLoginCta);
-
-            const hasStudentPicker = Array.from(
-              document.querySelectorAll("input, button, div, span, label")
-            ).some((el) => {
-              const text = normalized(el.textContent);
-              const placeholder = normalized(el.getAttribute("placeholder"));
-              const ariaLabel = normalized(el.getAttribute("aria-label"));
-              return (
-                text.includes("student's name or id") ||
-                placeholder.includes("student's name or id") ||
-                ariaLabel.includes("student's name or id")
-              );
-            });
-            const hasAttendanceSection =
-              document.querySelectorAll("section.attendances").length > 0;
-
-            let hasFirebaseSession = false;
-            try {
-              for (let i = 0; i < localStorage.length; i += 1) {
-                const key = (localStorage.key(i) || "").toLowerCase();
-                if (key.includes("firebase:authuser")) {
-                  hasFirebaseSession = true;
-                  break;
-                }
-              }
-            } catch (_error) {}
-
-            return {
-              href,
-              has_login_form: hasLoginForm,
-              has_dashboard_signals: hasStudentPicker || hasAttendanceSection,
-              has_firebase_session: hasFirebaseSession,
-            };
-            """
-        )
-        if not isinstance(state, dict):
-            return "/login" not in current_url
-
-        if "/login" in str(state.get("href", "")).lower():
-            return False
-
-        if bool(state.get("has_dashboard_signals", False)):
-            return True
-
-        if bool(state.get("has_firebase_session", False)) and not bool(
-            state.get("has_login_form", False)
-        ):
-            return True
-
-        if current_url.startswith(CODINGCAMP_URL) and not bool(
-            state.get("has_login_form", False)
-        ):
-            return True
-        return False
-    except Exception:
-        return "/login" not in current_url
-
-
-def wait_for_manual_codingcamp_login(
-    driver: webdriver.Chrome,
-    wait: WebDriverWait,
-    timeout_seconds: int,
-) -> None:
-    timeout = max(1, timeout_seconds)
-    print(
-        "Silakan login manual pada browser Selenium yang terbuka. "
-        f"Script akan menunggu sampai login berhasil (maks {timeout} detik)."
-    )
-
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        current_url = (driver.current_url or "").lower()
-        if "/login" not in current_url:
-            try:
-                wait_for_page_ready(driver, wait)
-            except Exception:
-                pass
-            print("Login manual terdeteksi, lanjut ke proses scraping...")
-            return
-
-        if is_authenticated(driver):
-            wait_for_page_ready(driver, wait)
-            print("Login manual terdeteksi, lanjut ke proses scraping...")
-            return
-        time.sleep(1)
-
-    raise TimeoutException(
-        "Login manual timeout. Masih belum terdeteksi masuk ke dashboard "
-        "CodingCamp sebelum batas waktu."
-    )
-
-
-def extract_logged_in_email(driver: webdriver.Chrome) -> str:
-    value = driver.execute_script(
-        r"""
-        const readEmail = (storage) => {
-          if (!storage) {
-            return "";
-          }
-          for (let i = 0; i < storage.length; i += 1) {
-            const key = storage.key(i) || "";
-            if (!/firebase:authuser/i.test(key)) {
-              continue;
-            }
-            const rawValue = storage.getItem(key) || "";
-            if (!rawValue) {
-              continue;
-            }
-            try {
-              const parsed = JSON.parse(rawValue);
-              if (parsed && typeof parsed.email === "string" && parsed.email.trim()) {
-                return parsed.email.trim().toLowerCase();
-              }
-            } catch (_error) {}
-          }
-          return "";
-        };
-
-        return readEmail(window.localStorage) || readEmail(window.sessionStorage);
-        """
-    )
-    return normalize_space(str(value or "")).lower()
-
-
-def perform_codingcamp_auth(
-    args: argparse.Namespace,
-) -> tuple[webdriver.Chrome, str]:
-    has_secret = bool(EMAIL and PASSWORD)
-    expected_login_email = normalize_space(str(EMAIL or "")).lower()
-    mode = args.auth_mode
-    should_attempt_auto = mode == "auto" or (mode == "hybrid" and has_secret)
-    initial_headless = should_attempt_auto and not args.headed
-    profile_dir = Path(args.profile_dir)
-
-    driver = create_bootstrapped_driver(
-        headless=initial_headless,
-        disable_images=not args.load_images,
-        enable_perf_logs=args.enable_perf_logs,
-        user_data_dir=profile_dir,
-        browser_path_override=args.browser_path,
-        driver_path_override=args.driver_path,
-        runtime_dir=Path(args.runtime_dir).expanduser(),
-        offline=args.offline,
-        script_timeout_seconds=ASYNC_SCRIPT_TIMEOUT_SECONDS,
-    )
-    wait = WebDriverWait(driver, 30)
-
-    def go_home() -> None:
-        driver.get(CODINGCAMP_URL)
-        wait_for_page_ready(driver, wait)
-
-    try:
-        go_home()
-        if is_authenticated(driver):
-            return driver, (
-                extract_logged_in_email(driver) or expected_login_email
-            )
-
-        if should_attempt_auto:
-            try:
-                if not has_secret:
-                    raise ValueError(
-                        "EMAIL/PASSWORD kosong; auto-login tidak bisa dijalankan."
-                    )
-
-                click_password_link(driver, wait)
-                login_with_email_password(driver, wait)
-                wait.until(is_authenticated)
-                wait_for_page_ready(driver, wait)
-                return driver, (
-                    expected_login_email or extract_logged_in_email(driver)
-                )
-            except Exception as error:
-                print(
-                    f"Auto-login gagal ({error}). Fallback ke login manual..."
-                )
-
-        if initial_headless:
-            driver.quit()
-            driver = create_bootstrapped_driver(
-                headless=False,
-                disable_images=not args.load_images,
-                enable_perf_logs=args.enable_perf_logs,
-                user_data_dir=profile_dir,
-                browser_path_override=args.browser_path,
-                driver_path_override=args.driver_path,
-                runtime_dir=Path(args.runtime_dir).expanduser(),
-                offline=args.offline,
-                script_timeout_seconds=ASYNC_SCRIPT_TIMEOUT_SECONDS,
-            )
-            wait = WebDriverWait(driver, 30)
-
-        go_home()
-        wait_for_manual_codingcamp_login(
-            driver, wait, args.manual_login_timeout
-        )
-        return driver, (
-            extract_logged_in_email(driver) or expected_login_email
-        )
-    except Exception:
-        driver.quit()
-        raise
 
 
 def build_attendance_progress_from_dom(
@@ -1697,7 +1363,25 @@ def main() -> None:
         print(f"ASAH attendance reference: {out_path}")
         return
 
-    driver, login_email_used = perform_codingcamp_auth(args)
+    auth_options = CodingcampAuthOptions(
+        auth_mode=args.auth_mode,
+        headed=args.headed,
+        profile_dir=Path(args.profile_dir),
+        load_images=args.load_images,
+        enable_perf_logs=args.enable_perf_logs,
+        browser_path=args.browser_path,
+        driver_path=args.driver_path,
+        runtime_dir=Path(args.runtime_dir).expanduser(),
+        offline=args.offline,
+        manual_login_timeout=args.manual_login_timeout,
+    )
+    driver, login_email_used = perform_codingcamp_auth(
+        auth_options,
+        codingcamp_url=CODINGCAMP_URL,
+        email=EMAIL,
+        password=PASSWORD,
+        script_timeout_seconds=ASYNC_SCRIPT_TIMEOUT_SECONDS,
+    )
 
     try:
         wait = WebDriverWait(driver, 30)
