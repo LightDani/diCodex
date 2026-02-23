@@ -3,30 +3,19 @@
 import argparse
 import json
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
-from browser_runtime import DEFAULT_RUNTIME_DIR, create_bootstrapped_driver
+from asah_capture import capture_asah_live_attendance_reference
+from browser_runtime import DEFAULT_RUNTIME_DIR
 from codingcamp_auth import CodingcampAuthOptions, perform_codingcamp_auth
 from csv_pipeline import export_tables_to_csv, transform_payload_to_tables
 from export_builder import build_export_json
-from dom_extractors import (
-    normalize_space,
-)
 from page_actions import (
     expand_all_student_data,
-    send_magic_link_from_asah,
-    wait_for_manual_magic_link_login,
 )
 from selenium_ui import wait_for_page_ready
-from student_progress import (
-    build_attendance_progress_from_dom,
-    ensure_student_progress_structure,
-)
 
 CODINGCAMP_URL = "https://codingcamp.dicoding.com"
 ASAH_URL = "https://asah.dicoding.com"
@@ -164,81 +153,21 @@ def write_json_replace(path: Path, payload: dict) -> None:
     )
 
 
-def capture_asah_live_attendance_reference(
-    asah_email: str,
-    *,
-    browser_path_override: str = "",
-    driver_path_override: str = "",
-    runtime_dir: Path = DEFAULT_RUNTIME_DIR,
-    offline: bool = False,
-    enable_perf_logs: bool = False,
-) -> Path:
-    driver = create_bootstrapped_driver(
-        headless=False,
-        disable_images=True,
-        enable_perf_logs=enable_perf_logs,
-        user_data_dir=None,
-        browser_path_override=browser_path_override,
-        driver_path_override=driver_path_override,
-        runtime_dir=runtime_dir,
-        offline=offline,
-        script_timeout_seconds=ASYNC_SCRIPT_TIMEOUT_SECONDS,
-    )
-    wait = WebDriverWait(driver, 30)
-
-    try:
-        send_magic_link_from_asah(
-            driver,
-            wait,
-            asah_email,
-            asah_url=ASAH_URL,
-            interaction_timeout_seconds=INTERACTION_TIMEOUT_SECONDS,
-        )
-        wait_for_manual_magic_link_login(driver, wait)
-        expand_all_student_data(
-            driver,
-            interaction_timeout_seconds=INTERACTION_TIMEOUT_SECONDS,
-        )
-
-        sections = driver.find_elements(By.CSS_SELECTOR, "section.attendances")
-        first_attendance = build_attendance_progress_from_dom(driver, 0)
-        first_attendance = ensure_student_progress_structure(
-            {"progress": {"attendances": first_attendance}}
-        )["progress"]["attendances"]
-        first_student_name = driver.execute_script(
-            """
-            const el = document.querySelector("h3.text-3xl.font-semibold");
-            return (el?.textContent || "").trim();
-            """
-        )
-
-        payload = {
-            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-            "source_url": driver.current_url,
-            "source": "asah_live",
-            "student_total": len(sections),
-            "first_student_name": normalize_space(first_student_name),
-            "attendance_reference": first_attendance,
-        }
-
-        out_path = OUTPUT_DIR / "asah_live_attendance_reference.json"
-        write_json_replace(out_path, payload)
-        return out_path
-    finally:
-        driver.quit()
-
-
 def main() -> None:
     args = parse_args()
 
     if args.source == "asah":
         out_path = capture_asah_live_attendance_reference(
             args.asah_email,
+            asah_url=ASAH_URL,
+            output_dir=OUTPUT_DIR,
             browser_path_override=args.browser_path,
             driver_path_override=args.driver_path,
             runtime_dir=Path(args.runtime_dir).expanduser(),
             offline=args.offline,
             enable_perf_logs=args.enable_perf_logs,
+            interaction_timeout_seconds=INTERACTION_TIMEOUT_SECONDS,
+            script_timeout_seconds=ASYNC_SCRIPT_TIMEOUT_SECONDS,
         )
         print(f"ASAH attendance reference: {out_path}")
         return
