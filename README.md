@@ -76,7 +76,7 @@ python main.py
 ## Opsi Login
 - `--auth-mode {hybrid,auto,manual}` (default: `hybrid`)
 - `--profile-dir <path>` (default: `.selenium_profile/codingcamp`)
-- `--manual-login-timeout <seconds>` (default: `300`)
+- `--manual-login-timeout <seconds>` (default: `600`)
 
 ## Opsi Runtime (Advanced)
 - `--browser-path <path>`: pakai browser binary tertentu.
