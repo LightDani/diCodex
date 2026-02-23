@@ -10,8 +10,14 @@ dependencies = [
 ]
 
 [tool.ruff]
-lint.extend-select = ["PTH"]
+line-length = 79
+extend-include = ["*.ipynb"]
 
-lint.ignore = [
-    "F401",  # unsused
-]
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+extend-select = ["PTH"]
+ignore = ["F401"]
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 72
+
