@@ -897,8 +897,43 @@ def wait_for_manual_codingcamp_login(
     )
 
 
-def perform_codingcamp_auth(args: argparse.Namespace) -> webdriver.Chrome:
+def extract_logged_in_email(driver: webdriver.Chrome) -> str:
+    value = driver.execute_script(
+        r"""
+        const readEmail = (storage) => {
+          if (!storage) {
+            return "";
+          }
+          for (let i = 0; i < storage.length; i += 1) {
+            const key = storage.key(i) || "";
+            if (!/firebase:authuser/i.test(key)) {
+              continue;
+            }
+            const rawValue = storage.getItem(key) || "";
+            if (!rawValue) {
+              continue;
+            }
+            try {
+              const parsed = JSON.parse(rawValue);
+              if (parsed && typeof parsed.email === "string" && parsed.email.trim()) {
+                return parsed.email.trim().toLowerCase();
+              }
+            } catch (_error) {}
+          }
+          return "";
+        };
+
+        return readEmail(window.localStorage) || readEmail(window.sessionStorage);
+        """
+    )
+    return normalize_space(str(value or "")).lower()
+
+
+def perform_codingcamp_auth(
+    args: argparse.Namespace,
+) -> tuple[webdriver.Chrome, str]:
     has_secret = bool(EMAIL and PASSWORD)
+    expected_login_email = normalize_space(str(EMAIL or "")).lower()
     mode = args.auth_mode
     should_attempt_auto = mode == "auto" or (mode == "hybrid" and has_secret)
     initial_headless = should_attempt_auto and not args.headed
@@ -923,7 +958,9 @@ def perform_codingcamp_auth(args: argparse.Namespace) -> webdriver.Chrome:
     try:
         go_home()
         if is_authenticated(driver):
-            return driver
+            return driver, (
+                extract_logged_in_email(driver) or expected_login_email
+            )
 
         if should_attempt_auto:
             try:
@@ -936,7 +973,9 @@ def perform_codingcamp_auth(args: argparse.Namespace) -> webdriver.Chrome:
                 login_with_email_password(driver, wait)
                 wait.until(is_authenticated)
                 wait_for_page_ready(driver, wait)
-                return driver
+                return driver, (
+                    expected_login_email or extract_logged_in_email(driver)
+                )
             except Exception as error:
                 print(
                     f"Auto-login gagal ({error}). Fallback ke login manual..."
@@ -960,7 +999,9 @@ def perform_codingcamp_auth(args: argparse.Namespace) -> webdriver.Chrome:
         wait_for_manual_codingcamp_login(
             driver, wait, args.manual_login_timeout
         )
-        return driver
+        return driver, (
+            extract_logged_in_email(driver) or expected_login_email
+        )
     except Exception:
         driver.quit()
         raise
@@ -1277,21 +1318,15 @@ def extract_mentor_from_dom(
             "";
         }
 
-        const loginEmailFoundInDom = expectedEmail ? allCandidates.includes(expectedEmail) : false;
-
         return {
           name: text(document.querySelector(".sidebar-menu .text-xl")),
           mentor_code: text(document.querySelector(".sidebar-menu .text-id.uppercase")),
           group: text(document.querySelector("li .font-normal.text-black.pt-1.pl-5")),
           nav_items: nav,
-          email: mentorEmail,
-          support_email: supportEmail,
-          login_email_expected: expectedEmail,
-          login_email_found_in_dom: loginEmailFoundInDom,
-          email_candidates: allCandidates
+          email: mentorEmail
         };
         """,
-        expected_email,
+        normalize_space(str(expected_email or "")),
     )
 
 
@@ -1815,17 +1850,19 @@ def extract_point_histories_all_pages(
 def build_export_json(
     driver: webdriver.Chrome,
     *,
+    login_email: str = "",
     use_fast_daily: bool = False,
     use_fast_points: bool = True,
 ) -> dict:
-    mentor = extract_mentor_from_dom(driver, EMAIL)
+    normalized_login_email = normalize_space(str(login_email or "")).lower()
+    mentor = extract_mentor_from_dom(driver, normalized_login_email or EMAIL)
+    if normalized_login_email:
+        mentor["email"] = normalized_login_email
+    else:
+        mentor["email"] = normalize_space(str(mentor.get("email", ""))).lower()
 
-    show_all_courses_clicked = click_all_buttons_by_keyword(
-        driver, "show all courses"
-    )
-    show_all_assignments_clicked = click_all_buttons_by_keyword(
-        driver, "show all assignments"
-    )
+    click_all_buttons_by_keyword(driver, "show all courses")
+    click_all_buttons_by_keyword(driver, "show all assignments")
     time.sleep(0.2)
 
     source = driver.page_source
@@ -1888,14 +1925,28 @@ def build_export_json(
             )
 
         students[idx] = ensure_student_progress_structure(students[idx])
+        progress = students[idx].get("progress", {})
+        if isinstance(progress, dict):
+            for attendance_key in ("attendances", "attendance"):
+                attendance_section = progress.get(attendance_key)
+                if isinstance(attendance_section, dict):
+                    attendance_section.pop("fallback_text_if_empty", None)
+                    attendance_section.pop("item_schema", None)
+                    attendance_section.pop("item_template", None)
+
+            assignments = progress.get("assignments")
+            if isinstance(assignments, dict):
+                assignments.pop("fallback_text_if_empty", None)
+
+            point_histories = progress.get("point_histories")
+            if isinstance(point_histories, dict):
+                point_histories.pop("fallback_text_if_empty", None)
 
     return {
         "metadata": {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
             "source_url": driver.current_url,
             "student_total": len(students),
-            "show_all_courses_clicked": show_all_courses_clicked,
-            "show_all_assignments_clicked": show_all_assignments_clicked,
         },
         "mentor": mentor,
         "students": students,
@@ -1971,7 +2022,7 @@ def main() -> None:
         print(f"ASAH attendance reference: {out_path}")
         return
 
-    driver = perform_codingcamp_auth(args)
+    driver, login_email_used = perform_codingcamp_auth(args)
 
     try:
         wait = WebDriverWait(driver, 30)
@@ -1982,6 +2033,7 @@ def main() -> None:
 
         payload = build_export_json(
             driver,
+            login_email=login_email_used,
             use_fast_daily=args.experimental_fast_daily,
             use_fast_points=True,
         )
