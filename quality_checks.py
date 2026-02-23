@@ -4,7 +4,7 @@ import argparse
 import csv
 from pathlib import Path
 
-from csv_pipeline import CSV_EXPORT_CONFIG
+from core.csv_pipeline import CSV_EXPORT_CONFIG
 
 
 def expected_csv_schema() -> dict[str, list[str]]:

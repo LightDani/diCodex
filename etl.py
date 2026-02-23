@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from csv_pipeline import (
+from core.csv_pipeline import (
     export_tables_to_csv,
     load_json_payload,
     resolve_default_json_source,

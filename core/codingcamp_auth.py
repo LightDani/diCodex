@@ -10,8 +10,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.ui import WebDriverWait
 
-from browser_runtime import create_bootstrapped_driver
-from selenium_ui import click_element, find_first_visible, wait_for_page_ready
+from .browser_runtime import create_bootstrapped_driver
+from .selenium_ui import click_element, find_first_visible, wait_for_page_ready
 
 AUTH_WAIT_SECONDS = 30
 

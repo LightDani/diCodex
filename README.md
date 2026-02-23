@@ -110,6 +110,18 @@ Semua hasil disimpan di `output/`.
 
 File output bersifat statis per group dan akan di-replace jika sudah ada.
 
+## Struktur Project
+Entry point tetap sederhana:
+- `main.py`: launcher utama
+- `etl.py`: transform JSON existing ke CSV
+
+Modul internal sudah dipindah ke package `core/` agar lebih rapih, meliputi:
+- auth/login flow
+- browser/runtime bootstrap
+- extractor DOM dan progress
+- builder export JSON/CSV
+- settings, UI actions, dan util output
+
 ## ETL Offline
 Untuk transform JSON existing tanpa scraping ulang:
 

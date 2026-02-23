@@ -6,15 +6,15 @@ from pathlib import Path
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
-from browser_runtime import DEFAULT_RUNTIME_DIR, create_bootstrapped_driver
-from dom_extractors import normalize_space
-from output_utils import write_json_replace
-from page_actions import (
+from .browser_runtime import DEFAULT_RUNTIME_DIR, create_bootstrapped_driver
+from .dom_extractors import normalize_space
+from .output_utils import write_json_replace
+from .page_actions import (
     expand_all_student_data,
     send_magic_link_from_asah,
     wait_for_manual_magic_link_login,
 )
-from student_progress import (
+from .student_progress import (
     build_attendance_progress_from_dom,
     ensure_student_progress_structure,
 )

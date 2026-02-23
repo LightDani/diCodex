@@ -7,7 +7,7 @@ import re
 
 from selenium import webdriver
 
-from student_progress import build_attendance_item
+from .student_progress import build_attendance_item
 
 
 def normalize_space(text: str) -> str:

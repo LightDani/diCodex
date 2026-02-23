@@ -6,13 +6,13 @@ from datetime import datetime, timezone
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
 
-from dom_extractors import (
+from .dom_extractors import (
     extract_mentor_from_dom,
     normalize_space,
     parse_student,
     student_blocks,
 )
-from student_progress import (
+from .student_progress import (
     build_attendance_progress_from_dom,
     click_all_buttons_by_keyword,
     ensure_student_progress_structure,

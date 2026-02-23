@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from app import run
+from core.app import run
 from quality_checks import parse_required_non_empty, validate_csv_outputs
 
 

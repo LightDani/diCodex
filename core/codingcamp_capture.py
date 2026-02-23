@@ -4,12 +4,12 @@ from pathlib import Path
 
 from selenium.webdriver.support.ui import WebDriverWait
 
-from codingcamp_auth import CodingcampAuthOptions, perform_codingcamp_auth
-from csv_pipeline import export_tables_to_csv, transform_payload_to_tables
-from export_builder import build_export_json
-from output_utils import sanitize_filename_part, write_json_replace
-from page_actions import expand_all_student_data
-from selenium_ui import wait_for_page_ready
+from .codingcamp_auth import CodingcampAuthOptions, perform_codingcamp_auth
+from .csv_pipeline import export_tables_to_csv, transform_payload_to_tables
+from .export_builder import build_export_json
+from .output_utils import sanitize_filename_part, write_json_replace
+from .page_actions import expand_all_student_data
+from .selenium_ui import wait_for_page_ready
 
 
 def run_codingcamp_export(

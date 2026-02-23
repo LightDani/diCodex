@@ -1,4 +1,4 @@
-from app import run
+from core.app import run
 
 
 if __name__ == "__main__":

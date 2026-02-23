@@ -9,7 +9,7 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
-from selenium_ui import click_element, find_first_visible, wait_for_page_ready
+from .selenium_ui import click_element, find_first_visible, wait_for_page_ready
 
 
 def click_from_locators(

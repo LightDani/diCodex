@@ -8,7 +8,7 @@ import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 
-from selenium_ui import click_element
+from .selenium_ui import click_element
 
 
 def normalize_space(text: str) -> str:

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from asah_capture import capture_asah_live_attendance_reference
-from browser_runtime import DEFAULT_RUNTIME_DIR
-from cli import parse_args
-from codingcamp_capture import run_codingcamp_export
-from settings import (
+from .asah_capture import capture_asah_live_attendance_reference
+from .browser_runtime import DEFAULT_RUNTIME_DIR
+from .cli import parse_args
+from .codingcamp_capture import run_codingcamp_export
+from .settings import (
     ASAH_URL,
     ASYNC_SCRIPT_TIMEOUT_SECONDS,
     CODINGCAMP_URL,
