@@ -24,6 +24,15 @@ def parse_args(
         ),
     )
     parser.add_argument(
+        "--pipeline-mode",
+        choices=["scrape-transform", "scrape", "transform"],
+        default="scrape-transform",
+        help=(
+            "Mode pipeline untuk source codingcamp: "
+            "scrape-transform (default), scrape, atau transform."
+        ),
+    )
+    parser.add_argument(
         "--asah-email",
         default=default_email,
         help="Email untuk request magic link saat mode --source asah.",
@@ -112,6 +121,23 @@ def parse_args(
         help=(
             "Format output untuk mode codingcamp: "
             "csv (default), json, atau both."
+        ),
+    )
+    parser.add_argument(
+        "--transform-source",
+        type=Path,
+        default=None,
+        help=(
+            "Path JSON sumber saat --pipeline-mode transform. "
+            "Jika kosong, dipilih otomatis dari output/."
+        ),
+    )
+    parser.add_argument(
+        "--transform-group",
+        default="",
+        help=(
+            "Group untuk memilih file default saat transform "
+            "(contoh CDC-04 -> codingcamp_CDC-04_full.json)."
         ),
     )
     return parser.parse_args()

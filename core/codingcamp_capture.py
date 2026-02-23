@@ -19,6 +19,7 @@ def run_codingcamp_export(
     password: str,
     codingcamp_url: str,
     output_dir: Path,
+    pipeline_mode: str = "scrape-transform",
     interaction_timeout_seconds: int = 20,
     async_script_timeout_seconds: int = 240,
     fast_pagination_delay_ms: int = 120,
@@ -67,10 +68,17 @@ def run_codingcamp_export(
             payload["mentor"].get("group", "unknown_group")
         )
 
-        if args.output_format in ("json", "both"):
+        should_write_json = (
+            args.output_format in ("json", "both") or pipeline_mode == "scrape"
+        )
+        if should_write_json:
             json_path = output_dir / f"codingcamp_{group_name}_full.json"
             write_json_replace(json_path, payload)
             print(f"Export JSON: {json_path}")
+
+        if pipeline_mode == "scrape":
+            print("Pipeline mode 'scrape': proses transform CSV dilewati.")
+            return
 
         if args.output_format in ("csv", "both"):
             tables = transform_payload_to_tables(payload)

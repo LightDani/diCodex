@@ -60,6 +60,26 @@ pip install -r requirements.txt
 uv run python main.py
 ```
 
+### Pipeline Mode
+- `--pipeline-mode {scrape-transform,scrape,transform}`
+- Default: `scrape-transform`
+
+Perilaku:
+- `scrape-transform`: scrape live lalu transform ke CSV.
+- `scrape`: scrape live saja (JSON).
+- `transform`: transform JSON existing ke CSV tanpa Selenium login.
+
+Contoh:
+```bash
+uv run python main.py --pipeline-mode scrape-transform
+uv run python main.py --pipeline-mode scrape --output-format json
+uv run python main.py --pipeline-mode transform --transform-group CDC-04
+```
+
+Opsi khusus mode `transform`:
+- `--transform-source <path_json>`
+- `--transform-group <id_group>`
+
 ### Mode Login
 - `--auth-mode {hybrid,auto,manual}` (default: `hybrid`)
 - `--profile-dir <path>` (default: `.selenium_profile/codingcamp`)
@@ -86,6 +106,7 @@ uv run python main.py --offline
 
 ### Format Output
 - `--output-format {csv,json,both}` (default: `csv`)
+- Berlaku untuk mode scrape/scrape-transform.
 
 Contoh:
 ```bash

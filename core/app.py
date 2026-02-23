@@ -17,6 +17,7 @@ from .settings import (
     OUTPUT_DIR,
     load_credentials,
 )
+from .transform_runner import run_transform_job
 
 
 def run() -> None:
@@ -29,6 +30,11 @@ def run() -> None:
     )
 
     if args.source == "asah":
+        if args.pipeline_mode == "transform":
+            raise ValueError(
+                "Pipeline mode 'transform' hanya valid untuk source "
+                "'codingcamp'."
+            )
         out_path = capture_asah_live_attendance_reference(
             args.asah_email,
             asah_url=ASAH_URL,
@@ -44,12 +50,21 @@ def run() -> None:
         print(f"ASAH attendance reference: {out_path}")
         return
 
+    if args.pipeline_mode == "transform":
+        run_transform_job(
+            output_dir=OUTPUT_DIR,
+            source_path=args.transform_source,
+            group=args.transform_group,
+        )
+        return
+
     run_codingcamp_export(
         args,
         email=email,
         password=password,
         codingcamp_url=CODINGCAMP_URL,
         output_dir=OUTPUT_DIR,
+        pipeline_mode=args.pipeline_mode,
         interaction_timeout_seconds=INTERACTION_TIMEOUT_SECONDS,
         async_script_timeout_seconds=ASYNC_SCRIPT_TIMEOUT_SECONDS,
         fast_pagination_delay_ms=FAST_PAGINATION_DELAY_MS,
