@@ -6,26 +6,24 @@ from asah_capture import capture_asah_live_attendance_reference
 from browser_runtime import DEFAULT_RUNTIME_DIR
 from cli import parse_args
 from codingcamp_capture import run_codingcamp_export
-
-CODINGCAMP_URL = "https://codingcamp.dicoding.com"
-ASAH_URL = "https://asah.dicoding.com"
-OUTPUT_DIR = Path("output")
-MAX_PAGINATION_STEPS = 300
-INTERACTION_TIMEOUT_SECONDS = 20
-ASYNC_SCRIPT_TIMEOUT_SECONDS = 240
-FAST_PAGINATION_DELAY_MS = 120
-DEFAULT_MANUAL_LOGIN_TIMEOUT_SECONDS = 600
-
-try:
-    from secret import EMAIL, PASSWORD
-except ImportError:
-    EMAIL = ""
-    PASSWORD = ""
+from settings import (
+    ASAH_URL,
+    ASYNC_SCRIPT_TIMEOUT_SECONDS,
+    CODINGCAMP_URL,
+    DEFAULT_MANUAL_LOGIN_TIMEOUT_SECONDS,
+    FAST_PAGINATION_DELAY_MS,
+    INTERACTION_TIMEOUT_SECONDS,
+    MAX_PAGINATION_STEPS,
+    OUTPUT_DIR,
+    load_credentials,
+)
 
 
 def main() -> None:
+    email, password = load_credentials()
+
     args = parse_args(
-        default_email=EMAIL,
+        default_email=email,
         default_runtime_dir=DEFAULT_RUNTIME_DIR,
         default_manual_login_timeout_seconds=DEFAULT_MANUAL_LOGIN_TIMEOUT_SECONDS,
     )
@@ -48,8 +46,8 @@ def main() -> None:
 
     run_codingcamp_export(
         args,
-        email=EMAIL,
-        password=PASSWORD,
+        email=email,
+        password=password,
         codingcamp_url=CODINGCAMP_URL,
         output_dir=OUTPUT_DIR,
         interaction_timeout_seconds=INTERACTION_TIMEOUT_SECONDS,
