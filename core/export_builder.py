@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
+from logging import Logger
 
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
@@ -21,6 +22,9 @@ from .student_progress import (
     extract_point_histories_all_pages,
     extract_point_histories_all_students_fast,
 )
+from .logging_utils import get_logger
+
+LOGGER: Logger = get_logger(__name__)
 
 
 def build_export_json(
@@ -68,9 +72,9 @@ def build_export_json(
                 delay_ms=fast_pagination_delay_ms,
             )
         except Exception as error:
-            print(
-                f"[warn] Fast daily-checkins gagal, fallback mode lama: "
-                f"{error}"
+            LOGGER.warning(
+                "fast_daily.failed fallback=legacy error=%s",
+                error,
             )
 
     if use_fast_points:
@@ -80,9 +84,9 @@ def build_export_json(
                 delay_ms=fast_pagination_delay_ms,
             )
         except Exception as error:
-            print(
-                f"[warn] Fast point-histories gagal, fallback mode lama: "
-                f"{error}"
+            LOGGER.warning(
+                "fast_points.failed fallback=legacy error=%s",
+                error,
             )
 
     for idx in range(len(students)):

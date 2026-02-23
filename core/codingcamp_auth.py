@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from logging import Logger
 from pathlib import Path
 
 from selenium import webdriver
@@ -11,9 +12,11 @@ from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.ui import WebDriverWait
 
 from .browser_runtime import create_bootstrapped_driver
+from .logging_utils import get_logger
 from .selenium_ui import click_element, find_first_visible, wait_for_page_ready
 
 AUTH_WAIT_SECONDS = 30
+LOGGER: Logger = get_logger(__name__)
 
 
 def normalize_space(text: str) -> str:
@@ -210,9 +213,10 @@ def wait_for_manual_codingcamp_login(
     codingcamp_url: str,
 ) -> None:
     timeout = max(1, timeout_seconds)
-    print(
+    LOGGER.info(
         "Silakan login manual pada browser Selenium yang terbuka. "
-        f"Script akan menunggu sampai login berhasil (maks {timeout} detik)."
+        "Script akan menunggu sampai login berhasil (maks %s detik).",
+        timeout,
     )
 
     deadline = time.time() + timeout
@@ -223,12 +227,12 @@ def wait_for_manual_codingcamp_login(
                 wait_for_page_ready(driver, wait)
             except Exception:
                 pass
-            print("Login manual terdeteksi, lanjut ke proses scraping...")
+            LOGGER.info("manual_login.detected state=url_non_login")
             return
 
         if is_authenticated(driver, codingcamp_url):
             wait_for_page_ready(driver, wait)
-            print("Login manual terdeteksi, lanjut ke proses scraping...")
+            LOGGER.info("manual_login.detected state=authenticated")
             return
         time.sleep(1)
 
@@ -312,11 +316,13 @@ def perform_codingcamp_auth(
     try:
         go_home()
         if is_authenticated(driver, codingcamp_url):
+            LOGGER.info("auth.session_reused source=existing_profile")
             return driver, (
                 extract_logged_in_email(driver) or expected_login_email
             )
 
         if should_attempt_auto:
+            LOGGER.info("auth.auto_attempt enabled=true")
             try:
                 if not has_secret:
                     raise ValueError(
@@ -328,15 +334,18 @@ def perform_codingcamp_auth(
                 login_with_email_password(driver, wait, email, password)
                 wait.until(lambda d: is_authenticated(d, codingcamp_url))
                 wait_for_page_ready(driver, wait)
+                LOGGER.info("auth.auto_success")
                 return driver, (
                     expected_login_email or extract_logged_in_email(driver)
                 )
             except Exception as error:
-                print(
-                    f"Auto-login gagal ({error}). Fallback ke login manual..."
+                LOGGER.warning(
+                    "auto_login.failed fallback=manual error=%s",
+                    error,
                 )
 
         if initial_headless:
+            LOGGER.info("auth.relaunch_headed reason=manual_fallback")
             driver.quit()
             driver = create_bootstrapped_driver(
                 headless=False,
@@ -352,12 +361,14 @@ def perform_codingcamp_auth(
             wait = WebDriverWait(driver, AUTH_WAIT_SECONDS)
 
         go_home()
+        LOGGER.info("auth.manual_wait_start")
         wait_for_manual_codingcamp_login(
             driver,
             wait,
             options.manual_login_timeout,
             codingcamp_url,
         )
+        LOGGER.info("auth.manual_success")
         return driver, (
             extract_logged_in_email(driver) or expected_login_email
         )

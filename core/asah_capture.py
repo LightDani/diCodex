@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from logging import Logger
 from pathlib import Path
 
 from selenium.webdriver.common.by import By
@@ -8,6 +9,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from .browser_runtime import DEFAULT_RUNTIME_DIR, create_bootstrapped_driver
 from .dom_extractors import normalize_space
+from .logging_utils import get_logger, timed_operation
 from .output_utils import write_json_replace
 from .page_actions import (
     expand_all_student_data,
@@ -18,6 +20,8 @@ from .student_progress import (
     build_attendance_progress_from_dom,
     ensure_student_progress_structure,
 )
+
+LOGGER: Logger = get_logger(__name__)
 
 
 def capture_asah_live_attendance_reference(
@@ -47,30 +51,36 @@ def capture_asah_live_attendance_reference(
     wait = WebDriverWait(driver, 30)
 
     try:
-        send_magic_link_from_asah(
-            driver,
-            wait,
-            asah_email,
-            asah_url=asah_url,
-            interaction_timeout_seconds=interaction_timeout_seconds,
-        )
-        wait_for_manual_magic_link_login(driver, wait)
-        expand_all_student_data(
-            driver,
-            interaction_timeout_seconds=interaction_timeout_seconds,
-        )
+        with timed_operation(LOGGER, "asah_send_magic_link"):
+            send_magic_link_from_asah(
+                driver,
+                wait,
+                asah_email,
+                asah_url=asah_url,
+                interaction_timeout_seconds=interaction_timeout_seconds,
+            )
+        with timed_operation(LOGGER, "asah_manual_login_wait"):
+            wait_for_manual_magic_link_login(driver, wait)
+        with timed_operation(LOGGER, "asah_expand_all_students"):
+            expand_all_student_data(
+                driver,
+                interaction_timeout_seconds=interaction_timeout_seconds,
+            )
 
-        sections = driver.find_elements(By.CSS_SELECTOR, "section.attendances")
-        first_attendance = build_attendance_progress_from_dom(driver, 0)
-        first_attendance = ensure_student_progress_structure(
-            {"progress": {"attendances": first_attendance}}
-        )["progress"]["attendances"]
-        first_student_name = driver.execute_script(
-            """
-            const el = document.querySelector("h3.text-3xl.font-semibold");
-            return (el?.textContent || "").trim();
-            """
-        )
+        with timed_operation(LOGGER, "asah_extract_attendance_reference"):
+            sections = driver.find_elements(
+                By.CSS_SELECTOR, "section.attendances"
+            )
+            first_attendance = build_attendance_progress_from_dom(driver, 0)
+            first_attendance = ensure_student_progress_structure(
+                {"progress": {"attendances": first_attendance}}
+            )["progress"]["attendances"]
+            first_student_name = driver.execute_script(
+                """
+                const el = document.querySelector("h3.text-3xl.font-semibold");
+                return (el?.textContent || "").trim();
+                """
+            )
 
         payload = {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -83,6 +93,7 @@ def capture_asah_live_attendance_reference(
 
         out_path = output_dir / "asah_live_attendance_reference.json"
         write_json_replace(out_path, payload)
+        LOGGER.info("asah.capture_output path=%s", out_path)
         return out_path
     finally:
         driver.quit()

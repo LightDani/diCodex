@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import time
+from logging import Logger
 
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
+from .logging_utils import get_logger
 from .selenium_ui import click_element, find_first_visible, wait_for_page_ready
+
+LOGGER: Logger = get_logger(__name__)
 
 
 def click_from_locators(
@@ -188,7 +192,7 @@ def send_magic_link_from_asah(
 def wait_for_manual_magic_link_login(
     driver: webdriver.Chrome, wait: WebDriverWait
 ) -> None:
-    print(
+    LOGGER.info(
         "Silakan paste+go magic link di browser Selenium yang terbuka "
         "(tab yang sama), lalu tekan Enter di terminal ini."
     )

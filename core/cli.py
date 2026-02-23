@@ -104,6 +104,12 @@ def parse_args(
         help="Aktifkan performance logs Chrome (khusus debug/inspeksi).",
     )
     parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Level logging aplikasi (default: INFO).",
+    )
+    parser.add_argument(
         "--experimental-fast-daily",
         action="store_true",
         help="Pakai mode daily-checkins super cepat (default aktif).",

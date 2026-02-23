@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from logging import Logger
 from pathlib import Path
 
 from selenium.webdriver.support.ui import WebDriverWait
@@ -9,7 +10,10 @@ from .csv_pipeline import export_tables_to_csv, transform_payload_to_tables
 from .export_builder import build_export_json
 from .output_utils import sanitize_filename_part, write_json_replace
 from .page_actions import expand_all_student_data
+from .logging_utils import get_logger, timed_operation
 from .selenium_ui import wait_for_page_ready
+
+LOGGER: Logger = get_logger(__name__)
 
 
 def run_codingcamp_export(
@@ -47,23 +51,26 @@ def run_codingcamp_export(
 
     try:
         wait = WebDriverWait(driver, 30)
-        wait_for_page_ready(driver, wait)
-        print("Autentikasi selesai. Memulai ekstraksi data...")
+        with timed_operation(LOGGER, "auth_ready"):
+            wait_for_page_ready(driver, wait)
+        LOGGER.info("auth.completed start_scrape=true")
 
-        expand_all_student_data(
-            driver,
-            interaction_timeout_seconds=interaction_timeout_seconds,
-        )
+        with timed_operation(LOGGER, "expand_all_students"):
+            expand_all_student_data(
+                driver,
+                interaction_timeout_seconds=interaction_timeout_seconds,
+            )
 
-        payload = build_export_json(
-            driver,
-            login_email=login_email_used,
-            fallback_login_email=email,
-            use_fast_daily=args.experimental_fast_daily,
-            use_fast_points=True,
-            fast_pagination_delay_ms=fast_pagination_delay_ms,
-            max_pagination_steps=max_pagination_steps,
-        )
+        with timed_operation(LOGGER, "build_export_json"):
+            payload = build_export_json(
+                driver,
+                login_email=login_email_used,
+                fallback_login_email=email,
+                use_fast_daily=args.experimental_fast_daily,
+                use_fast_points=True,
+                fast_pagination_delay_ms=fast_pagination_delay_ms,
+                max_pagination_steps=max_pagination_steps,
+            )
         group_name = sanitize_filename_part(
             payload["mentor"].get("group", "unknown_group")
         )
@@ -74,17 +81,18 @@ def run_codingcamp_export(
         if should_write_json:
             json_path = output_dir / f"codingcamp_{group_name}_full.json"
             write_json_replace(json_path, payload)
-            print(f"Export JSON: {json_path}")
+            LOGGER.info("export.json path=%s", json_path)
 
         if pipeline_mode == "scrape":
-            print("Pipeline mode 'scrape': proses transform CSV dilewati.")
+            LOGGER.info("pipeline.scrape_only transform_csv=false")
             return
 
         if args.output_format in ("csv", "both"):
-            tables = transform_payload_to_tables(payload)
-            row_count_by_file = export_tables_to_csv(tables, output_dir)
-            print("Export CSV:")
+            with timed_operation(LOGGER, "transform_to_csv"):
+                tables = transform_payload_to_tables(payload)
+                row_count_by_file = export_tables_to_csv(tables, output_dir)
+            LOGGER.info("export.csv summary.start")
             for filename, count in row_count_by_file.items():
-                print(f"- {filename}: {count} baris data")
+                LOGGER.info("export.csv file=%s rows=%s", filename, count)
     finally:
         driver.quit()

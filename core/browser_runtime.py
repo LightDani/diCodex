@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 import shutil
@@ -15,6 +16,7 @@ from selenium.webdriver.chrome.service import Service
 
 DEFAULT_RUNTIME_DIR = Path(".runtime/browser")
 CFT_LKG_URL = "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json"
+LOGGER = logging.getLogger(__name__)
 
 
 def build_driver(
@@ -250,9 +252,10 @@ def ensure_cft_runtime(runtime_dir: Path, offline: bool) -> tuple[Path, Path]:
         shutil.rmtree(cft_root)
     cft_root.mkdir(parents=True, exist_ok=True)
 
-    print(
-        "Bootstrap runtime: mengunduh "
-        f"Chrome for Testing {version} ({platform_key})..."
+    LOGGER.info(
+        "runtime.bootstrap_download version=%s platform=%s",
+        version,
+        platform_key,
     )
     download_zip_and_extract(chrome_url, cft_root)
     download_zip_and_extract(driver_url, cft_root)
@@ -289,7 +292,7 @@ def create_bootstrapped_driver(
         driver_path_override, "Driver path"
     )
     if explicit_browser or explicit_driver:
-        print("Driver strategy: explicit override.")
+        LOGGER.info("driver.strategy mode=explicit_override")
         return build_driver(
             headless=headless,
             disable_images=disable_images,
@@ -331,7 +334,7 @@ def create_bootstrapped_driver(
                 driver_path=driver_path,
                 script_timeout_seconds=script_timeout_seconds,
             )
-            print(f"Driver strategy: {strategy}.")
+            LOGGER.info("driver.strategy mode=%s", strategy)
             return driver
         except Exception as error:
             errors.append(f"{strategy}: {error}")
@@ -347,7 +350,7 @@ def create_bootstrapped_driver(
             driver_path=driver_path,
             script_timeout_seconds=script_timeout_seconds,
         )
-        print("Driver strategy: cached/downloaded Chrome for Testing runtime.")
+        LOGGER.info("driver.strategy mode=cached_or_downloaded_cft_runtime")
         return driver
     except Exception as error:
         errors.append(f"chrome-for-testing runtime: {error}")

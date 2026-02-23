@@ -97,11 +97,13 @@ uv run python main.py --auth-mode auto
 - `--runtime-dir <path>`: lokasi cache runtime otomatis
   (default: `.runtime/browser`).
 - `--offline`: nonaktifkan download runtime otomatis.
+- `--log-level {DEBUG,INFO,WARNING,ERROR}` (default: `INFO`).
 
 Contoh:
 ```bash
 uv run python main.py --browser-path "C:\\Chrome\\chrome.exe" --driver-path "C:\\Driver\\chromedriver.exe"
 uv run python main.py --offline
+uv run python main.py --log-level DEBUG
 ```
 
 ### Format Output
