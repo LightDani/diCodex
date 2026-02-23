@@ -1,7 +1,5 @@
 # ruff: noqa: E501, W505
 
-import json
-import re
 from pathlib import Path
 
 from selenium.webdriver.support.ui import WebDriverWait
@@ -12,6 +10,7 @@ from cli import parse_args
 from codingcamp_auth import CodingcampAuthOptions, perform_codingcamp_auth
 from csv_pipeline import export_tables_to_csv, transform_payload_to_tables
 from export_builder import build_export_json
+from output_utils import sanitize_filename_part, write_json_replace
 from page_actions import (
     expand_all_student_data,
 )
@@ -31,21 +30,6 @@ try:
 except ImportError:
     EMAIL = ""
     PASSWORD = ""
-
-
-def sanitize_filename_part(text: str) -> str:
-    cleaned = re.sub(r"[^\w\-]+", "_", (text or "").strip(), flags=re.ASCII)
-    cleaned = cleaned.strip("_")
-    return cleaned or "unknown_group"
-
-
-def write_json_replace(path: Path, payload: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        path.unlink()
-    path.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
 
 
 def main() -> None:
