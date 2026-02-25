@@ -33,6 +33,36 @@ def many(pattern: str, text: str) -> list[tuple[str, ...]]:
     return rows
 
 
+def html_fragment_to_text(fragment: str) -> str:
+    no_tags = re.sub(r"<[^>]+>", " ", fragment or "", flags=re.S)
+    return normalize_space(html.unescape(no_tags))
+
+
+def labeled_value(block_html: str, label: str) -> str:
+    escaped_label = re.escape(label)
+    patterns = [
+        (
+            rf"<p[^>]*>\s*{escaped_label}\s*</p>\s*</div>\s*"
+            r'<p[^>]*class="[^"]*pl-4[^"]*"[^>]*>(.*?)</p>'
+        ),
+        (
+            rf"<p[^>]*>\s*{escaped_label}\s*</p>\s*</div>\s*"
+            r'<ul[^>]*class="[^"]*pl-4[^"]*"[^>]*>\s*'
+            r"<li[^>]*>(.*?)</li>"
+        ),
+        (
+            rf"<p[^>]*>\s*{escaped_label}\s*</p>.*?"
+            r"<p[^>]*>(.*?)</p>"
+        ),
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, block_html, flags=re.S)
+        if not match:
+            continue
+        return html_fragment_to_text(match.group(1))
+    return ""
+
+
 def student_blocks(page_html: str) -> list[str]:
     marker = '<div class="container flex flex-col pb-8 border-b">'
     parts = page_html.split(marker)[1:]
@@ -57,22 +87,10 @@ def parse_student(block_html: str) -> dict:
             r'<div class="inline-block text-xs font-medium[^>]*><p>([^<]+)</p></div>',
             block_html,
         ),
-        "university": one(
-            r'<p class="text-sm text-gray-700">University</p></div><p class="font-normal text-black pl-4">([^<]+)</p>',
-            block_html,
-        ),
-        "major": one(
-            r'<p class="text-sm text-gray-700">Major</p></div><p class="font-normal text-black pl-4">([^<]+)</p>',
-            block_html,
-        ),
-        "facilitator": one(
-            r'<p class="text-sm text-gray-700">Facilitator</p></div><p class="font-normal text-black pl-4 break-words">([^<]+)</p>',
-            block_html,
-        ),
-        "lecturer": one(
-            r'<p class="text-sm text-gray-700">Lecturer</p></div><p class="font-normal text-black pl-4(?: break-words)?">([^<]+)</p>',
-            block_html,
-        ),
+        "university": labeled_value(block_html, "University"),
+        "major": labeled_value(block_html, "Major"),
+        "facilitator": labeled_value(block_html, "Facilitator"),
+        "lecturer": labeled_value(block_html, "Lecturer"),
     }
 
     attendance_section = one(
