@@ -16,7 +16,12 @@ LOGGER = logging.getLogger(__name__)
 
 MOOD_MAP = {"bad": 1, "neutral": 2, "good": 3}
 ASSIGNMENT_FLAG_MAP = {"Uncompleted": 0, "Completed": 1, "Late": 2}
-ATTENDANCE_FLAG_MAP = {"Absent": 0, "Attending": 1, "Late": 2}
+ATTENDANCE_FLAG_MAP = {
+    "Absent": 0,
+    "Attending": 1,
+    "Late": 2,
+    "Replaced": 3,
+}
 
 ASSIGNMENT_NAMES = [
     (
@@ -310,15 +315,16 @@ def transform_payload_to_tables(
 
         for attendance in progress.get("attendances", {}).get("items", []):
             activity_name = str(attendance.get("event", "")).strip()
-            flag = ATTENDANCE_FLAG_MAP.get(attendance.get("status", ""))
-            if not activity_name or flag is None:
+            if not activity_name:
                 dropped_counts["attendance"] += 1
                 continue
             student_attendance_rows.append(
                 {
                     "student_id": student_id,
                     "activity_name": activity_name,
-                    "flag": flag,
+                    "flag": ATTENDANCE_FLAG_MAP.get(
+                        attendance.get("status", "")
+                    ),
                 }
             )
 

@@ -342,6 +342,7 @@ def build_export_json(
 
     click_all_buttons_by_keyword(driver, "show all courses")
     click_all_buttons_by_keyword(driver, "show all assignments")
+    click_all_buttons_by_keyword(driver, "show all attend")
     time.sleep(0.2)
 
     source = driver.page_source

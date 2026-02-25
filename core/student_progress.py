@@ -82,21 +82,27 @@ def ensure_student_progress_structure(student: dict) -> dict:
 def build_attendance_progress_from_dom(
     driver: webdriver.Chrome, student_index: int
 ) -> dict:
-    sections = driver.find_elements(By.CSS_SELECTOR, "section.attendances")
-    if student_index >= len(sections):
+    student_cards = driver.find_elements(
+        By.CSS_SELECTOR, "div.container.flex.flex-col.pb-8.border-b"
+    )
+    if student_index >= len(student_cards):
         return {
             "last_updated": "",
             "items": [],
             "fallback_text_if_empty": "",
         }
 
-    section = sections[student_index]
+    card = student_cards[student_index]
     payload = driver.execute_script(
         r"""
-        const section = arguments[0];
+        const card = arguments[0];
         const text = (el) => (el?.textContent || "").replace(/\s+/g, " ").trim();
+        const section =
+          card.querySelector("section.attendances") ||
+          card.querySelector("section.attendance");
+        const scope = section || card;
 
-        const rows = Array.from(section.querySelectorAll("[data-event-name]")).map((row) => {
+        const rows = Array.from(scope.querySelectorAll("[data-event-name]")).map((row) => {
           const statusEl = row.querySelector("[data-element='item-status-label']");
           return {
             event_name: (row.getAttribute("data-event-name") || "").trim(),
@@ -105,11 +111,11 @@ def build_attendance_progress_from_dom(
         });
 
         const fallbackText =
-          text(section.querySelector("[data-element='attendance-none']")) ||
-          text(section.querySelector("p.text-sm.text-gray-700"));
+          text(scope.querySelector("[data-element='attendance-none']")) ||
+          text(scope.querySelector("p.text-sm.text-gray-700"));
 
         const lastUpdatedRaw = text(
-          section.querySelector("[data-element='attendance-last-update']")
+          scope.querySelector("[data-element='attendance-last-update']")
         );
 
         return {
@@ -118,7 +124,7 @@ def build_attendance_progress_from_dom(
           items: rows,
         };
         """,
-        section,
+        card,
     )
 
     items = [
