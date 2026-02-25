@@ -27,6 +27,76 @@ from .logging_utils import get_logger
 LOGGER: Logger = get_logger(__name__)
 
 
+def extract_session_email(driver: webdriver.Chrome) -> str:
+    value = driver.execute_script(
+        r"""
+        const normalize = (value) =>
+          (value || "").replace(/\s+/g, " ").trim().toLowerCase();
+        const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+
+        const parseMaybeJson = (rawValue) => {
+          if (!rawValue) {
+            return null;
+          }
+          try {
+            return JSON.parse(rawValue);
+          } catch (_error) {
+            return null;
+          }
+        };
+
+        const extractFromParsed = (parsed) => {
+          if (!parsed) {
+            return "";
+          }
+          if (typeof parsed === "string") {
+            const nested = parseMaybeJson(parsed);
+            if (nested && nested !== parsed) {
+              return extractFromParsed(nested);
+            }
+            const matched = parsed.match(emailRegex);
+            return matched?.[0] || "";
+          }
+          if (
+            typeof parsed.email === "string" &&
+            normalize(parsed.email)
+          ) {
+            return parsed.email;
+          }
+          const asText = JSON.stringify(parsed);
+          const matched = asText.match(emailRegex);
+          return matched?.[0] || "";
+        };
+
+        const readFromStorage = (storage) => {
+          if (!storage) {
+            return "";
+          }
+          for (let i = 0; i < storage.length; i += 1) {
+            const key = storage.key(i) || "";
+            if (!/firebase:authuser/i.test(key)) {
+              continue;
+            }
+            const raw = storage.getItem(key) || "";
+            const fromParsed = extractFromParsed(parseMaybeJson(raw));
+            if (normalize(fromParsed)) {
+              return fromParsed;
+            }
+            const fromRaw = raw.match(emailRegex)?.[0] || "";
+            if (normalize(fromRaw)) {
+              return fromRaw;
+            }
+          }
+          return "";
+        };
+
+        return readFromStorage(window.localStorage) ||
+          readFromStorage(window.sessionStorage);
+        """
+    )
+    return normalize_space(str(value or "")).lower()
+
+
 def build_export_json(
     driver: webdriver.Chrome,
     *,
@@ -38,12 +108,21 @@ def build_export_json(
     max_pagination_steps: int = 300,
 ) -> dict:
     normalized_login_email = normalize_space(str(login_email or "")).lower()
-    mentor = extract_mentor_from_dom(
-        driver, normalized_login_email or fallback_login_email
+    normalized_fallback_email = normalize_space(
+        str(fallback_login_email or "")
+    ).lower()
+    session_email = extract_session_email(driver)
+    effective_email = (
+        normalized_login_email or session_email or normalized_fallback_email
     )
-    if normalized_login_email:
-        mentor["email"] = normalized_login_email
+
+    mentor = extract_mentor_from_dom(driver, effective_email)
+    if effective_email:
+        mentor["email"] = effective_email
     else:
+        LOGGER.warning(
+            "mentor_email.fallback_to_dom reason=no_login_or_session_email"
+        )
         mentor["email"] = normalize_space(str(mentor.get("email", ""))).lower()
 
     click_all_buttons_by_keyword(driver, "show all courses")
