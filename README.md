@@ -183,6 +183,7 @@ uv run python smoke_test.py --run-mode subprocess --auth-mode hybrid
 
 ## Catatan
 - First run bisa lebih lama karena bootstrap runtime.
+- Sesi login tidak di-reuse antar-run; autentikasi dimulai dari sesi baru.
 - Saat login manual dibutuhkan, browser otomatis berjalan dalam mode UI
   (headed).
 - Folder lokal runtime di-ignore git:

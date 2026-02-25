@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import json
+import re
 import time
 from datetime import datetime, timezone
 from logging import Logger
@@ -97,10 +100,207 @@ def extract_session_email(driver: webdriver.Chrome) -> str:
     return normalize_space(str(value or "")).lower()
 
 
+def decode_jwt_payload(token: str) -> dict:
+    parts = (token or "").split(".")
+    if len(parts) < 2:
+        return {}
+    payload = parts[1]
+    padding = "=" * (-len(payload) % 4)
+    try:
+        raw = base64.urlsafe_b64decode((payload + padding).encode("utf-8"))
+        parsed = json.loads(raw.decode("utf-8"))
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def extract_cookie_email(driver: webdriver.Chrome) -> str:
+    email_pattern = r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}"
+    for cookie in driver.get_cookies():
+        raw_value = str(cookie.get("value", "") or "")
+        direct_match = re.search(email_pattern, raw_value, flags=re.I)
+        if direct_match:
+            return normalize_space(direct_match.group(0)).lower()
+
+        decoded = decode_jwt_payload(raw_value)
+        for key in ("email", "user_email", "upn"):
+            value = normalize_space(str(decoded.get(key, ""))).lower()
+            if value and "@" in value:
+                return value
+    return ""
+
+
+def extract_indexeddb_email(driver: webdriver.Chrome) -> str:
+    try:
+        value = driver.execute_async_script(
+            r"""
+            const done = arguments[arguments.length - 1];
+            const normalize = (value) =>
+              (value || "").replace(/\s+/g, " ").trim().toLowerCase();
+            const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+            const databasesApi = indexedDB?.databases?.bind(indexedDB);
+
+            const extractEmail = (rawValue) => {
+              if (!rawValue) {
+                return "";
+              }
+              if (typeof rawValue === "string") {
+                const matched = rawValue.match(emailRegex);
+                return matched?.[0] || "";
+              }
+              if (
+                typeof rawValue.email === "string" &&
+                normalize(rawValue.email)
+              ) {
+                return rawValue.email;
+              }
+              const asText = JSON.stringify(rawValue);
+              const matched = asText.match(emailRegex);
+              return matched?.[0] || "";
+            };
+
+            const readStoreValues = (db, storeName) =>
+              new Promise((resolve) => {
+                try {
+                  const tx = db.transaction(storeName, "readonly");
+                  const store = tx.objectStore(storeName);
+                  const req = store.getAll();
+                  req.onsuccess = () => resolve(req.result || []);
+                  req.onerror = () => resolve([]);
+                } catch (_error) {
+                  resolve([]);
+                }
+              });
+
+            const openDb = (name) =>
+              new Promise((resolve) => {
+                try {
+                  const req = indexedDB.open(name);
+                  req.onsuccess = () => resolve(req.result || null);
+                  req.onerror = () => resolve(null);
+                } catch (_error) {
+                  resolve(null);
+                }
+              });
+
+            (async () => {
+              const dbNames = ["firebaseLocalStorageDb"];
+              if (databasesApi) {
+                try {
+                  const listed = await databasesApi();
+                  for (const item of listed || []) {
+                    const name = item?.name || "";
+                    if (name && !dbNames.includes(name)) {
+                      dbNames.push(name);
+                    }
+                  }
+                } catch (_error) {}
+              }
+
+              for (const dbName of dbNames) {
+                const db = await openDb(dbName);
+                if (!db) {
+                  continue;
+                }
+                try {
+                  const stores = Array.from(db.objectStoreNames || []);
+                  for (const storeName of stores) {
+                    const rows = await readStoreValues(db, storeName);
+                    for (const row of rows) {
+                      const email =
+                        extractEmail(row) ||
+                        extractEmail(row?.value) ||
+                        extractEmail(row?.fbase_key) ||
+                        extractEmail(row?.rawUserInfo);
+                      if (normalize(email)) {
+                        db.close();
+                        done(email);
+                        return;
+                      }
+                    }
+                  }
+                } finally {
+                  db.close();
+                }
+              }
+              done("");
+            })().catch(() => done(""));
+            """
+        )
+        return normalize_space(str(value or "")).lower()
+    except Exception:
+        return ""
+
+
+def is_email_present_in_live_source(
+    driver: webdriver.Chrome, candidate_email: str
+) -> bool:
+    target = normalize_space(str(candidate_email or "")).lower()
+    if not target:
+        return False
+
+    try:
+        if target in (driver.page_source or "").lower():
+            return True
+    except Exception:
+        pass
+
+    try:
+        found = driver.execute_script(
+            r"""
+            const target = (arguments[0] || "").trim().toLowerCase();
+            if (!target) {
+              return false;
+            }
+
+            const contains = (value) =>
+              (value || "").toLowerCase().includes(target);
+
+            const inStorage = (storage) => {
+              if (!storage) {
+                return false;
+              }
+              for (let i = 0; i < storage.length; i += 1) {
+                const key = storage.key(i) || "";
+                const raw = storage.getItem(key) || "";
+                if (contains(key) || contains(raw)) {
+                  return true;
+                }
+              }
+              return false;
+            };
+
+            return inStorage(window.localStorage) ||
+              inStorage(window.sessionStorage);
+            """,
+            target,
+        )
+        return bool(found)
+    except Exception:
+        found = False
+
+    if found:
+        return True
+
+    lower_target = target.lower()
+    for cookie in driver.get_cookies():
+        raw_value = str(cookie.get("value", "") or "").lower()
+        if lower_target in raw_value:
+            return True
+        decoded = decode_jwt_payload(str(cookie.get("value", "") or ""))
+        decoded_email = normalize_space(str(decoded.get("email", ""))).lower()
+        if decoded_email == lower_target:
+            return True
+    if extract_indexeddb_email(driver) == lower_target:
+        return True
+    return False
+
+
 def build_export_json(
     driver: webdriver.Chrome,
     *,
     login_email: str = "",
+    expected_login_email: str = "",
     fallback_login_email: str = "",
     use_fast_daily: bool = False,
     use_fast_points: bool = True,
@@ -108,12 +308,27 @@ def build_export_json(
     max_pagination_steps: int = 300,
 ) -> dict:
     normalized_login_email = normalize_space(str(login_email or "")).lower()
+    normalized_expected_email = normalize_space(
+        str(expected_login_email or "")
+    ).lower()
     normalized_fallback_email = normalize_space(
         str(fallback_login_email or "")
     ).lower()
-    session_email = extract_session_email(driver)
+    session_email = (
+        extract_session_email(driver)
+        or extract_cookie_email(driver)
+        or extract_indexeddb_email(driver)
+    )
+    verified_expected_email = (
+        normalized_expected_email
+        if is_email_present_in_live_source(driver, normalized_expected_email)
+        else ""
+    )
     effective_email = (
-        normalized_login_email or session_email or normalized_fallback_email
+        normalized_login_email
+        or session_email
+        or verified_expected_email
+        or normalized_fallback_email
     )
 
     mentor = extract_mentor_from_dom(driver, effective_email)

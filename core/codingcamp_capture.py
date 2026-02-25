@@ -65,7 +65,8 @@ def run_codingcamp_export(
             payload = build_export_json(
                 driver,
                 login_email=login_email_used,
-                fallback_login_email=email,
+                expected_login_email="",
+                fallback_login_email="",
                 use_fast_daily=args.experimental_fast_daily,
                 use_fast_points=True,
                 fast_pagination_delay_ms=fast_pagination_delay_ms,

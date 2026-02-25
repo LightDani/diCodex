@@ -57,8 +57,7 @@ def parse_args(
         "--profile-dir",
         default=".selenium_profile/codingcamp",
         help=(
-            "Folder Chrome profile persisten untuk menyimpan sesi login "
-            "antar-run."
+            "Folder profile Chrome untuk runtime Selenium."
         ),
     )
     parser.add_argument(

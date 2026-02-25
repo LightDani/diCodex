@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import time
 from dataclasses import dataclass
 from logging import Logger
@@ -245,6 +246,44 @@ def wait_for_manual_codingcamp_login(
 def extract_logged_in_email(driver: webdriver.Chrome) -> str:
     value = driver.execute_script(
         r"""
+        const normalize = (value) =>
+          (value || "").replace(/\s+/g, " ").trim().toLowerCase();
+        const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+
+        const parseMaybeJson = (rawValue) => {
+          if (!rawValue) {
+            return null;
+          }
+          try {
+            return JSON.parse(rawValue);
+          } catch (_error) {
+            return null;
+          }
+        };
+
+        const extractFromParsed = (parsed) => {
+          if (!parsed) {
+            return "";
+          }
+          if (typeof parsed === "string") {
+            const nested = parseMaybeJson(parsed);
+            if (nested && nested !== parsed) {
+              return extractFromParsed(nested);
+            }
+            const matched = parsed.match(emailRegex);
+            return matched?.[0] || "";
+          }
+          if (
+            typeof parsed.email === "string" &&
+            normalize(parsed.email)
+          ) {
+            return parsed.email;
+          }
+          const asText = JSON.stringify(parsed);
+          const matched = asText.match(emailRegex);
+          return matched?.[0] || "";
+        };
+
         const readEmail = (storage) => {
           if (!storage) {
             return "";
@@ -255,19 +294,14 @@ def extract_logged_in_email(driver: webdriver.Chrome) -> str:
               continue;
             }
             const rawValue = storage.getItem(key) || "";
-            if (!rawValue) {
-              continue;
+            const fromParsed = extractFromParsed(parseMaybeJson(rawValue));
+            if (normalize(fromParsed)) {
+              return fromParsed;
             }
-            try {
-              const parsed = JSON.parse(rawValue);
-              if (
-                parsed &&
-                typeof parsed.email === "string" &&
-                parsed.email.trim()
-              ) {
-                return parsed.email.trim().toLowerCase();
-              }
-            } catch (_error) {}
+            const fromRaw = rawValue.match(emailRegex)?.[0] || "";
+            if (normalize(fromRaw)) {
+              return fromRaw;
+            }
           }
           return "";
         };
@@ -281,6 +315,127 @@ def extract_logged_in_email(driver: webdriver.Chrome) -> str:
     return normalize_space(str(value or "")).lower()
 
 
+def extract_logged_in_email_from_indexeddb(driver: webdriver.Chrome) -> str:
+    try:
+        value = driver.execute_async_script(
+            r"""
+            const done = arguments[arguments.length - 1];
+            const normalize = (value) =>
+              (value || "").replace(/\s+/g, " ").trim().toLowerCase();
+            const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+            const databasesApi = indexedDB?.databases?.bind(indexedDB);
+
+            const extractEmail = (rawValue) => {
+              if (!rawValue) {
+                return "";
+              }
+              if (typeof rawValue === "string") {
+                return rawValue.match(emailRegex)?.[0] || "";
+              }
+              if (
+                typeof rawValue.email === "string" &&
+                normalize(rawValue.email)
+              ) {
+                return rawValue.email;
+              }
+              const asText = JSON.stringify(rawValue);
+              return asText.match(emailRegex)?.[0] || "";
+            };
+
+            const openDb = (name) =>
+              new Promise((resolve) => {
+                try {
+                  const req = indexedDB.open(name);
+                  req.onsuccess = () => resolve(req.result || null);
+                  req.onerror = () => resolve(null);
+                } catch (_error) {
+                  resolve(null);
+                }
+              });
+
+            const readStoreValues = (db, storeName) =>
+              new Promise((resolve) => {
+                try {
+                  const tx = db.transaction(storeName, "readonly");
+                  const store = tx.objectStore(storeName);
+                  const req = store.getAll();
+                  req.onsuccess = () => resolve(req.result || []);
+                  req.onerror = () => resolve([]);
+                } catch (_error) {
+                  resolve([]);
+                }
+              });
+
+            (async () => {
+              const dbNames = ["firebaseLocalStorageDb"];
+              if (databasesApi) {
+                try {
+                  const listed = await databasesApi();
+                  for (const item of listed || []) {
+                    const name = item?.name || "";
+                    if (name && !dbNames.includes(name)) {
+                      dbNames.push(name);
+                    }
+                  }
+                } catch (_error) {}
+              }
+
+              for (const dbName of dbNames) {
+                const db = await openDb(dbName);
+                if (!db) {
+                  continue;
+                }
+                try {
+                  const stores = Array.from(db.objectStoreNames || []);
+                  for (const storeName of stores) {
+                    const rows = await readStoreValues(db, storeName);
+                    for (const row of rows) {
+                      const email =
+                        extractEmail(row) ||
+                        extractEmail(row?.value) ||
+                        extractEmail(row?.fbase_key) ||
+                        extractEmail(row?.rawUserInfo);
+                      if (normalize(email)) {
+                        db.close();
+                        done(email);
+                        return;
+                      }
+                    }
+                  }
+                } finally {
+                  db.close();
+                }
+              }
+              done("");
+            })().catch(() => done(""));
+            """
+        )
+        return normalize_space(str(value or "")).lower()
+    except Exception:
+        return ""
+
+
+def cached_login_email_path(profile_dir: Path) -> Path:
+    return profile_dir.expanduser() / ".last_login_email"
+
+
+def save_cached_login_email(profile_dir: Path, email: str) -> None:
+    normalized = normalize_space(str(email or "")).lower()
+    if not normalized:
+        return
+    cache_path = cached_login_email_path(profile_dir)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(normalized, encoding="utf-8")
+
+
+def reset_profile_session(profile_dir: Path) -> None:
+    resolved = profile_dir.expanduser()
+    if resolved.exists():
+        shutil.rmtree(resolved)
+    resolved.mkdir(parents=True, exist_ok=True)
+    LOGGER.info("auth.profile_reset path=%s", resolved)
+
+
 def perform_codingcamp_auth(
     options: CodingcampAuthOptions,
     *,
@@ -289,12 +444,22 @@ def perform_codingcamp_auth(
     password: str,
     script_timeout_seconds: int,
 ) -> tuple[webdriver.Chrome, str]:
-    has_secret = bool(email and password)
-    expected_login_email = normalize_space(str(email or "")).lower()
-    mode = options.auth_mode
-    should_attempt_auto = mode == "auto" or (mode == "hybrid" and has_secret)
-    initial_headless = should_attempt_auto and not options.headed
     profile_dir = options.profile_dir
+    reset_profile_session(profile_dir)
+    has_secret = bool(email and password)
+    mode = options.auth_mode
+
+    should_attempt_auto = mode == "auto" or (mode == "hybrid" and has_secret)
+    needs_manual_login = mode == "manual" or not should_attempt_auto
+    initial_headless = not options.headed and not needs_manual_login
+    LOGGER.info(
+        "auth.mode mode=%s has_secret=%s "
+        "should_attempt_auto=%s initial_headless=%s",
+        mode,
+        has_secret,
+        should_attempt_auto,
+        initial_headless,
+    )
 
     driver = create_bootstrapped_driver(
         headless=initial_headless,
@@ -315,11 +480,6 @@ def perform_codingcamp_auth(
 
     try:
         go_home()
-        if is_authenticated(driver, codingcamp_url):
-            LOGGER.info("auth.session_reused source=existing_profile")
-            return driver, (
-                extract_logged_in_email(driver) or expected_login_email
-            )
 
         if should_attempt_auto:
             LOGGER.info("auth.auto_attempt enabled=true")
@@ -335,9 +495,12 @@ def perform_codingcamp_auth(
                 wait.until(lambda d: is_authenticated(d, codingcamp_url))
                 wait_for_page_ready(driver, wait)
                 LOGGER.info("auth.auto_success")
-                return driver, (
-                    expected_login_email or extract_logged_in_email(driver)
+                resolved_email = (
+                    extract_logged_in_email(driver)
+                    or extract_logged_in_email_from_indexeddb(driver)
                 )
+                save_cached_login_email(profile_dir, resolved_email)
+                return driver, resolved_email
             except Exception as error:
                 LOGGER.warning(
                     "auto_login.failed fallback=manual error=%s",
@@ -369,9 +532,12 @@ def perform_codingcamp_auth(
             codingcamp_url,
         )
         LOGGER.info("auth.manual_success")
-        return driver, (
-            extract_logged_in_email(driver) or expected_login_email
+        resolved_email = (
+            extract_logged_in_email(driver)
+            or extract_logged_in_email_from_indexeddb(driver)
         )
+        save_cached_login_email(profile_dir, resolved_email)
+        return driver, resolved_email
     except Exception:
         driver.quit()
         raise
