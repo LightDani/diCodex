@@ -6,6 +6,23 @@ from pathlib import Path
 
 from core.csv_pipeline import CSV_EXPORT_CONFIG
 
+REQUIRED_FIELDS_BY_FILE = {
+    "mentor_data.csv": ["id", "name", "email", "number_of_student"],
+    "student.csv": ["id", "name", "group"],
+    "student_daily_checkin.csv": [
+        "student_id",
+        "quantitative_mood",
+        "date",
+    ],
+    "student_assignment.csv": [
+        "student_id",
+        "assignment_id",
+        "assignment_flag",
+    ],
+    "student_attendance.csv": ["student_id", "activity_name", "flag"],
+    "student_course_progress.csv": ["student_id", "course_id", "quantitative"],
+}
+
 
 def expected_csv_schema() -> dict[str, list[str]]:
     return {filename: columns for filename, _, columns in CSV_EXPORT_CONFIG}
@@ -25,10 +42,31 @@ def read_header(path: Path) -> list[str]:
     return [str(value) for value in header]
 
 
+def collect_blank_required_field_errors(path: Path) -> list[str]:
+    filename = path.name
+    required_fields = REQUIRED_FIELDS_BY_FILE.get(filename, [])
+    if not required_fields:
+        return []
+
+    errors: list[str] = []
+    with path.open("r", newline="", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        for line_number, row in enumerate(reader, start=2):
+            for field in required_fields:
+                value = (row.get(field) or "").strip()
+                if value:
+                    continue
+                errors.append(
+                    f"{filename}:{line_number} field '{field}' kosong"
+                )
+    return errors
+
+
 def validate_csv_outputs(
     output_dir: Path,
     *,
     required_non_empty: set[str] | None = None,
+    validate_required_fields: bool = True,
 ) -> tuple[list[str], dict[str, int]]:
     expected = expected_csv_schema()
     errors: list[str] = []
@@ -55,6 +93,8 @@ def validate_csv_outputs(
             errors.append(
                 f"File {filename} harus berisi minimal 1 baris data."
             )
+        if validate_required_fields:
+            errors.extend(collect_blank_required_field_errors(path))
 
     return errors, row_counts
 
@@ -82,6 +122,11 @@ def parse_args() -> argparse.Namespace:
             "1 baris data."
         ),
     )
+    parser.add_argument(
+        "--skip-required-fields-check",
+        action="store_true",
+        help="Lewati validasi field wajib agar tidak kosong.",
+    )
     return parser.parse_args()
 
 
@@ -91,7 +136,9 @@ def main() -> int:
     required_non_empty = parse_required_non_empty(args.require_non_empty)
 
     errors, row_counts = validate_csv_outputs(
-        output_dir, required_non_empty=required_non_empty
+        output_dir,
+        required_non_empty=required_non_empty,
+        validate_required_fields=not args.skip_required_fields_check,
     )
     if errors:
         print("CSV schema validation: FAILED")

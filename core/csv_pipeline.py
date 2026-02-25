@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +12,7 @@ from zoneinfo import ZoneInfo
 SOURCE_GLOB = "codingcamp_*.json"
 SOURCE_NAME_TEMPLATE = "codingcamp_{group}_full.json"
 WIB_TZ = ZoneInfo("Asia/Jakarta")
+LOGGER = logging.getLogger(__name__)
 
 MOOD_MAP = {"bad": 1, "neutral": 2, "good": 3}
 ASSIGNMENT_FLAG_MAP = {"Uncompleted": 0, "Completed": 1, "Late": 2}
@@ -243,11 +245,22 @@ def transform_payload_to_tables(
     student_assignment_rows: list[dict[str, Any]] = []
     student_attendance_rows: list[dict[str, Any]] = []
     student_course_progress_rows: list[dict[str, Any]] = []
+    dropped_counts = {
+        "student": 0,
+        "daily_checkin": 0,
+        "assignment": 0,
+        "attendance": 0,
+        "course_progress": 0,
+    }
 
     for student in students:
         profile = student.get("profile", {})
         progress = student.get("progress", {})
         student_id = extract_student_id(str(profile.get("profile_link", "")))
+
+        if not student_id:
+            dropped_counts["student"] += 1
+            continue
 
         student_rows.append(
             {
@@ -263,49 +276,73 @@ def transform_payload_to_tables(
         )
 
         for checkin in progress.get("daily_checkins", {}).get("items", []):
+            quantitative_mood = MOOD_MAP.get(checkin.get("mood"))
+            parsed_date = parse_checkin_date(checkin.get("date", ""))
+            if quantitative_mood is None or not parsed_date:
+                dropped_counts["daily_checkin"] += 1
+                continue
             student_daily_checkin_rows.append(
                 {
                     "student_id": student_id,
-                    "quantitative_mood": MOOD_MAP.get(checkin.get("mood")),
+                    "quantitative_mood": quantitative_mood,
                     "qualitative": checkin.get("reflection", ""),
-                    "date": parse_checkin_date(checkin.get("date", "")),
+                    "date": parsed_date,
                 }
             )
 
         for assignment in progress.get("assignments", {}).get("items", []):
+            assignment_id = ASSIGNMENT_ID_MAP.get(
+                assignment.get("assignment", "")
+            )
+            assignment_flag = ASSIGNMENT_FLAG_MAP.get(
+                assignment.get("status", "")
+            )
+            if assignment_id is None or assignment_flag is None:
+                dropped_counts["assignment"] += 1
+                continue
             student_assignment_rows.append(
                 {
                     "student_id": student_id,
-                    "assignment_id": ASSIGNMENT_ID_MAP.get(
-                        assignment.get("assignment", "")
-                    ),
-                    "assignment_flag": ASSIGNMENT_FLAG_MAP.get(
-                        assignment.get("status", "")
-                    ),
+                    "assignment_id": assignment_id,
+                    "assignment_flag": assignment_flag,
                 }
             )
 
         for attendance in progress.get("attendances", {}).get("items", []):
+            activity_name = str(attendance.get("event", "")).strip()
+            flag = ATTENDANCE_FLAG_MAP.get(attendance.get("status", ""))
+            if not activity_name or flag is None:
+                dropped_counts["attendance"] += 1
+                continue
             student_attendance_rows.append(
                 {
                     "student_id": student_id,
-                    "activity_name": attendance.get("event", ""),
-                    "flag": ATTENDANCE_FLAG_MAP.get(
-                        attendance.get("status", "")
-                    ),
+                    "activity_name": activity_name,
+                    "flag": flag,
                 }
             )
 
         for course in progress.get("course_progress", {}).get("items", []):
+            course_id = COURSE_ID_MAP.get(course.get("course", ""))
+            quantitative = parse_progress_percent(
+                course.get("progress_percent", "")
+            )
+            if course_id is None or quantitative is None:
+                dropped_counts["course_progress"] += 1
+                continue
             student_course_progress_rows.append(
                 {
                     "student_id": student_id,
-                    "course_id": COURSE_ID_MAP.get(course.get("course", "")),
-                    "quantitative": parse_progress_percent(
-                        course.get("progress_percent", "")
-                    ),
+                    "course_id": course_id,
+                    "quantitative": quantitative,
                 }
             )
+
+    dropped_summary = ", ".join(
+        f"{key}={value}" for key, value in dropped_counts.items() if value > 0
+    )
+    if dropped_summary:
+        LOGGER.warning("transform_rows_dropped %s", dropped_summary)
 
     return {
         "mentor_data": mentor_rows,
