@@ -20,6 +20,7 @@ from .student_progress import (
     build_attendance_progress_from_dom,
     click_all_buttons_by_keyword,
     ensure_student_progress_structure,
+    extract_attendances_all_students_fast,
     extract_daily_checkins_all_pages,
     extract_daily_checkins_all_students_fast,
     extract_point_histories_all_pages,
@@ -357,8 +358,42 @@ def build_export_json(
         for block in blocks
     ]
 
+    fast_attendance_by_student: list[dict] | None = None
     fast_daily_by_student: list[list[dict]] | None = None
     fast_point_by_student: list[dict] | None = None
+
+    try:
+        candidate_attendance = extract_attendances_all_students_fast(driver)
+        is_valid_attendance_payload = (
+            isinstance(candidate_attendance, list)
+            and len(candidate_attendance) == len(students)
+            and all(
+                isinstance(section, dict)
+                for section in candidate_attendance
+            )
+            and all(
+                isinstance(section.get("items", []), list)
+                for section in candidate_attendance
+            )
+        )
+        if is_valid_attendance_payload:
+            fast_attendance_by_student = candidate_attendance
+        else:
+            LOGGER.warning(
+                "fast_attendance.invalid_payload fallback=legacy "
+                "student_total=%s attendance_total=%s",
+                len(students),
+                (
+                    len(candidate_attendance)
+                    if isinstance(candidate_attendance, list)
+                    else "invalid"
+                ),
+            )
+    except Exception as error:
+        LOGGER.warning(
+            "fast_attendance.failed fallback=legacy error=%s",
+            error,
+        )
 
     if use_fast_daily:
         try:
@@ -385,9 +420,17 @@ def build_export_json(
             )
 
     for idx in range(len(students)):
-        students[idx]["progress"]["attendances"] = (
-            build_attendance_progress_from_dom(driver, idx)
-        )
+        if (
+            fast_attendance_by_student
+            and idx < len(fast_attendance_by_student)
+        ):
+            students[idx]["progress"]["attendances"] = (
+                fast_attendance_by_student[idx]
+            )
+        else:
+            students[idx]["progress"]["attendances"] = (
+                build_attendance_progress_from_dom(driver, idx)
+            )
         if fast_daily_by_student and idx < len(fast_daily_by_student):
             students[idx]["progress"]["daily_checkins"] = {
                 "items": fast_daily_by_student[idx]

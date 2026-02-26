@@ -142,6 +142,93 @@ def build_attendance_progress_from_dom(
     }
 
 
+def extract_attendances_all_students_fast(
+    driver: webdriver.Chrome,
+) -> list[dict]:
+    payload = driver.execute_script(
+        r"""
+        const text = (el) => (el?.textContent || "").replace(/\s+/g, " ").trim();
+        const cards = Array.from(
+          document.querySelectorAll("div.container.flex.flex-col.pb-8.border-b")
+        );
+
+        return cards.map((card) => {
+          const section =
+            card.querySelector("section.attendances") ||
+            card.querySelector("section.attendance");
+          const scope = section || card;
+
+          const lastUpdatedRaw = text(
+            scope.querySelector("[data-element='attendance-last-update']")
+          );
+          const fallbackText =
+            text(scope.querySelector("[data-element='attendance-none']")) ||
+            text(scope.querySelector("p.text-sm.text-gray-700"));
+
+          const seen = new Set();
+          const items = [];
+          for (const row of Array.from(scope.querySelectorAll("[data-event-name]"))) {
+            const event = (row.getAttribute("data-event-name") || "").trim();
+            const status = text(row.querySelector("[data-element='item-status-label']"));
+            const key = `${event}||${status}`;
+            if (seen.has(key)) {
+              continue;
+            }
+            seen.add(key);
+            items.push({ event, status });
+          }
+
+          return {
+            last_updated: lastUpdatedRaw.replace(/^Last updated:\s*/i, ""),
+            fallback_text_if_empty: fallbackText,
+            items,
+          };
+        });
+        """
+    )
+    if not isinstance(payload, list):
+        raise RuntimeError("Fast extraction attendances gagal: payload invalid")
+
+    normalized_payload: list[dict] = []
+    for section in payload:
+        if not isinstance(section, dict):
+            normalized_payload.append(
+                {
+                    "last_updated": "",
+                    "items": [],
+                    "fallback_text_if_empty": "",
+                }
+            )
+            continue
+
+        rows = section.get("items", [])
+        normalized_rows = []
+        if isinstance(rows, list):
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                normalized_rows.append(
+                    build_attendance_item(
+                        str(row.get("event", "")),
+                        str(row.get("status", "")),
+                    )
+                )
+
+        normalized_payload.append(
+            {
+                "last_updated": normalize_space(
+                    str(section.get("last_updated", ""))
+                ),
+                "items": normalized_rows,
+                "fallback_text_if_empty": normalize_space(
+                    str(section.get("fallback_text_if_empty", ""))
+                ),
+            }
+        )
+
+    return normalized_payload
+
+
 def click_all_buttons_by_keyword(
     driver: webdriver.Chrome, keyword: str, max_clicks: int = 500
 ) -> int:
