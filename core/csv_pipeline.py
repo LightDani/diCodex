@@ -21,6 +21,7 @@ ATTENDANCE_FLAG_MAP = {
     "Attending": 1,
     "Late": 2,
     "Replaced": 3,
+    "Off-Cam": 4,
 }
 
 ASSIGNMENT_NAMES = [
