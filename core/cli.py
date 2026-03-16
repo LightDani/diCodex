@@ -124,8 +124,10 @@ def parse_args(
         choices=["csv", "json", "both"],
         default="csv",
         help=(
-            "Format output untuk mode codingcamp: "
-            "csv (default), json, atau both."
+            "Format artefak output untuk source codingcamp. "
+            "Pada `scrape-transform`, CSV selalu dihasilkan; "
+            "`json`/`both` juga menyimpan file JSON. "
+            "Pada `scrape`, output efektif selalu JSON."
         ),
     )
     parser.add_argument(

@@ -4,7 +4,6 @@ import argparse
 import sys
 from pathlib import Path
 
-from core.app import run
 from quality_checks import parse_required_non_empty, validate_csv_outputs
 
 
@@ -56,6 +55,8 @@ def ensure_output_format_csv(args: list[str]) -> list[str]:
 
 
 def run_main_inprocess(main_script: str, forwarded_args: list[str]) -> int:
+    from core.app import run
+
     effective_args = ensure_output_format_csv(forwarded_args)
     argv = [main_script, *effective_args]
     print("Menjalankan smoke command (inprocess):")

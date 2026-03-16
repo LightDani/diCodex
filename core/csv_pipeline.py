@@ -15,6 +15,7 @@ WIB_TZ = ZoneInfo("Asia/Jakarta")
 LOGGER = logging.getLogger(__name__)
 
 MOOD_MAP = {"bad": 1, "neutral": 2, "good": 3}
+UNKNOWN_FLAG = "unknown"
 ASSIGNMENT_FLAG_MAP = {
     "Uncompleted": 0,
     "Completed": 1,
@@ -215,6 +216,21 @@ def parse_progress_percent(raw_value: str) -> int | None:
     return int(match.group(0))
 
 
+def resolve_flag_value(
+    raw_status: Any,
+    flag_map: dict[str, int],
+    *,
+    category: str,
+    unknown_statuses: dict[str, set[str]],
+) -> int | str:
+    normalized_status = str(raw_status or "").strip()
+    flag_value = flag_map.get(normalized_status)
+    if flag_value is not None:
+        return flag_value
+    unknown_statuses[category].add(normalized_status or "<empty>")
+    return UNKNOWN_FLAG
+
+
 def write_csv(
     path: Path,
     fieldnames: list[str],
@@ -265,6 +281,10 @@ def transform_payload_to_tables(
         "attendance": 0,
         "course_progress": 0,
     }
+    unknown_statuses: dict[str, set[str]] = {
+        "assignment": set(),
+        "attendance": set(),
+    }
 
     for student in students:
         profile = student.get("profile", {})
@@ -307,10 +327,13 @@ def transform_payload_to_tables(
             assignment_id = ASSIGNMENT_ID_MAP.get(
                 assignment.get("assignment", "")
             )
-            assignment_flag = ASSIGNMENT_FLAG_MAP.get(
-                assignment.get("status", "")
+            assignment_flag = resolve_flag_value(
+                assignment.get("status", ""),
+                ASSIGNMENT_FLAG_MAP,
+                category="assignment",
+                unknown_statuses=unknown_statuses,
             )
-            if assignment_id is None or assignment_flag is None:
+            if assignment_id is None:
                 dropped_counts["assignment"] += 1
                 continue
             student_assignment_rows.append(
@@ -323,6 +346,12 @@ def transform_payload_to_tables(
 
         for attendance in progress.get("attendances", {}).get("items", []):
             activity_name = str(attendance.get("event", "")).strip()
+            attendance_flag = resolve_flag_value(
+                attendance.get("status", ""),
+                ATTENDANCE_FLAG_MAP,
+                category="attendance",
+                unknown_statuses=unknown_statuses,
+            )
             if not activity_name:
                 dropped_counts["attendance"] += 1
                 continue
@@ -330,9 +359,7 @@ def transform_payload_to_tables(
                 {
                     "student_id": student_id,
                     "activity_name": activity_name,
-                    "flag": ATTENDANCE_FLAG_MAP.get(
-                        attendance.get("status", "")
-                    ),
+                    "flag": attendance_flag,
                 }
             )
 
@@ -357,6 +384,14 @@ def transform_payload_to_tables(
     )
     if dropped_summary:
         LOGGER.warning("transform_rows_dropped %s", dropped_summary)
+    for category, values in unknown_statuses.items():
+        if not values:
+            continue
+        LOGGER.warning(
+            "transform_unknown_statuses category=%s values=%s",
+            category,
+            sorted(values),
+        )
 
     return {
         "mentor_data": mentor_rows,

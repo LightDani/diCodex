@@ -16,6 +16,16 @@ from .selenium_ui import wait_for_page_ready
 LOGGER: Logger = get_logger(__name__)
 
 
+def should_write_json_output(*, pipeline_mode: str, output_format: str) -> bool:
+    if pipeline_mode == "scrape":
+        return True
+    return output_format in ("json", "both")
+
+
+def should_write_csv_output(*, pipeline_mode: str) -> bool:
+    return pipeline_mode == "scrape-transform"
+
+
 def run_codingcamp_export(
     args,
     *,
@@ -76,8 +86,9 @@ def run_codingcamp_export(
             payload["mentor"].get("group", "unknown_group")
         )
 
-        should_write_json = (
-            args.output_format in ("json", "both") or pipeline_mode == "scrape"
+        should_write_json = should_write_json_output(
+            pipeline_mode=pipeline_mode,
+            output_format=args.output_format,
         )
         if should_write_json:
             json_path = output_dir / f"codingcamp_{group_name}_full.json"
@@ -85,10 +96,29 @@ def run_codingcamp_export(
             LOGGER.info("export.json path=%s", json_path)
 
         if pipeline_mode == "scrape":
-            LOGGER.info("pipeline.scrape_only transform_csv=false")
+            LOGGER.info(
+                "pipeline.scrape_only outputs=json requested_output_format=%s",
+                args.output_format,
+            )
             return
 
-        if args.output_format in ("csv", "both"):
+        should_write_csv = should_write_csv_output(
+            pipeline_mode=pipeline_mode
+        )
+        if not should_write_csv:
+            LOGGER.info(
+                "pipeline.skip_csv_export pipeline_mode=%s",
+                pipeline_mode,
+            )
+            return
+
+        if args.output_format == "json":
+            LOGGER.info(
+                "pipeline.scrape_transform outputs=csv+json "
+                "reason=json_requested_with_transform"
+            )
+
+        if should_write_csv:
             with timed_operation(LOGGER, "transform_to_csv"):
                 tables = transform_payload_to_tables(payload)
                 row_count_by_file = export_tables_to_csv(tables, output_dir)

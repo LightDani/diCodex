@@ -71,6 +71,12 @@ Perilaku:
 - `scrape`: scrape live saja (JSON).
 - `transform`: transform JSON existing ke CSV tanpa Selenium login.
 
+Catatan output:
+- Pada `scrape-transform`, file CSV selalu dihasilkan.
+- Jika `--output-format json` atau `both` dipakai saat `scrape-transform`,
+  file JSON juga akan disimpan sebagai artefak tambahan.
+- Pada `scrape`, output efektif selalu JSON.
+
 Contoh:
 ```bash
 uv run python main.py --pipeline-mode scrape-transform
@@ -110,7 +116,9 @@ uv run python main.py --log-level DEBUG
 
 ### Format Output
 - `--output-format {csv,json,both}` (default: `csv`)
-- Berlaku untuk mode scrape/scrape-transform.
+- Pada `scrape-transform`, CSV selalu dihasilkan.
+- `json`/`both` menambah file JSON hasil scrape.
+- Pada `scrape`, output efektif selalu JSON.
 
 Contoh:
 ```bash
