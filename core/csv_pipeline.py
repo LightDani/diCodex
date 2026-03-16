@@ -15,13 +15,20 @@ WIB_TZ = ZoneInfo("Asia/Jakarta")
 LOGGER = logging.getLogger(__name__)
 
 MOOD_MAP = {"bad": 1, "neutral": 2, "good": 3}
-ASSIGNMENT_FLAG_MAP = {"Uncompleted": 0, "Completed": 1, "Late": 2}
+ASSIGNMENT_FLAG_MAP = {
+    "Uncompleted": 0,
+    "Completed": 1,
+    "Late": 2,
+    "Resubmit": 3,
+}
 ATTENDANCE_FLAG_MAP = {
     "Absent": 0,
     "Attending": 1,
     "Late": 2,
     "Replaced": 3,
     "Off-Cam": 4,
+    "Rejected": 5,
+    "Abstract": 6,
 }
 
 ASSIGNMENT_NAMES = [

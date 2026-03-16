@@ -18,3 +18,7 @@ chromedriver/
 output/
 .selenium_profile/
 .runtime/
+tasks/
+
+# Jupyter Notebook testing
+test.ipynb
