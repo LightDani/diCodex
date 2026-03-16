@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import re
+from typing import Any
 
 from selenium import webdriver
 
@@ -190,6 +191,283 @@ def parse_student(block_html: str) -> dict:
             },
         },
     }
+
+
+def extract_students_from_dom(driver: webdriver.Chrome) -> list[dict]:
+    payload = driver.execute_script(
+        r"""
+        const text = (el) => (el?.textContent || "").replace(/\s+/g, " ").trim();
+
+        const readLabeledValue = (card, label) => {
+          const target = (label || "").trim().toLowerCase();
+          if (!target) {
+            return "";
+          }
+
+          const labelNode = Array.from(card.querySelectorAll("p,span,label,dt,th"))
+            .find((el) => text(el).toLowerCase() === target);
+          if (!labelNode) {
+            return "";
+          }
+
+          const labelContainer = labelNode.closest("div,li,section,article,tr,td,dl");
+          const directValue = text(
+            labelContainer?.parentElement?.querySelector("p.pl-4, ul.pl-4")
+          );
+          if (directValue && directValue.toLowerCase() !== target) {
+            return directValue;
+          }
+
+          const nextSiblingValue = text(labelContainer?.nextElementSibling);
+          if (nextSiblingValue && nextSiblingValue.toLowerCase() !== target) {
+            return nextSiblingValue;
+          }
+
+          const container = labelContainer?.parentElement || labelNode.parentElement;
+          if (!container) {
+            return "";
+          }
+
+          const candidate = Array.from(
+            container.querySelectorAll("p,li,span,div,a")
+          )
+            .map((el) => text(el))
+            .find((value) => value && value.toLowerCase() !== target);
+          return candidate || "";
+        };
+
+        const cards = Array.from(
+          document.querySelectorAll("div.container.flex.flex-col.pb-8.border-b")
+        );
+
+        return cards.map((card) => {
+          const profileLink = card.querySelector("h1 a[href], h3 a[href], a[href*='/u/']");
+          const photo = card.querySelector("img[src], img[alt]");
+          const statusBadge = card.querySelector("div.inline-block.text-xs.font-medium");
+
+          const courseSection = card.querySelector("section.course-progress") || card;
+          const courseItems = Array.from(card.querySelectorAll("[data-course]")).map((row) => ({
+            course: (row.getAttribute("data-course") || "").trim(),
+            progress_percent: text(
+              row.querySelector("span.mr-2, [data-element='item-progress-label']")
+            ),
+            status: text(row.querySelector("[data-element='item-status-label']")),
+          }));
+
+          const assignmentSection = card.querySelector("section.assignments") || card;
+          const assignmentItems = Array.from(
+            assignmentSection.querySelectorAll("[data-assign-name]")
+          ).map((row) => ({
+            assignment: (row.getAttribute("data-assign-name") || "").trim(),
+            status: text(row.querySelector("[data-element='item-status-label']")),
+          }));
+
+          const attendanceSection =
+            card.querySelector("section.attendances") ||
+            card.querySelector("section.attendance") ||
+            card;
+          const attendanceItems = Array.from(
+            attendanceSection.querySelectorAll("[data-event-name]")
+          ).map((row) => ({
+            event: (row.getAttribute("data-event-name") || "").trim(),
+            status: text(row.querySelector("[data-element='item-status-label']")),
+          }));
+
+          return {
+            profile: {
+              name: text(card.querySelector("h3.text-3xl.font-semibold, h3")),
+              profile_link: profileLink?.getAttribute("href") || "",
+              photo_url: photo?.getAttribute("src") || "",
+              status_badge: text(statusBadge),
+              university: readLabeledValue(card, "University"),
+              major: readLabeledValue(card, "Major"),
+              facilitator: readLabeledValue(card, "Facilitator"),
+              lecturer: readLabeledValue(card, "Lecturer"),
+            },
+            progress: {
+              attendances: {
+                last_updated: text(
+                  attendanceSection.querySelector(
+                    "[data-element='attendance-last-update']"
+                  )
+                ).replace(/^Last updated:\s*/i, ""),
+                items: attendanceItems,
+                fallback_text_if_empty: text(
+                  attendanceSection.querySelector(
+                    "[data-element='attendance-none']"
+                  )
+                ),
+                item_schema: {
+                  event: "string",
+                  status: "string",
+                },
+              },
+              course_progress: {
+                last_updated: text(
+                  courseSection.querySelector(
+                    "[data-element='course-progress-last-update']"
+                  )
+                ).replace(/^Last updated:\s*/i, ""),
+                items: courseItems,
+              },
+              assignments: {
+                last_updated: text(
+                  assignmentSection.querySelector(
+                    "[data-element='assignment-last-update']"
+                  )
+                ).replace(/^Last updated:\s*/i, ""),
+                items: assignmentItems,
+                fallback_text_if_empty: text(
+                  assignmentSection.querySelector(
+                    "[data-element='assignment-none']"
+                  )
+                ),
+              },
+              daily_checkins: {
+                items: [],
+              },
+            },
+          };
+        });
+        """
+    )
+    if not isinstance(payload, list):
+        raise RuntimeError("DOM extraction students gagal: payload invalid")
+
+    students: list[dict] = []
+    for raw_student in payload:
+        if not isinstance(raw_student, dict):
+            continue
+
+        raw_profile = raw_student.get("profile", {})
+        raw_progress = raw_student.get("progress", {})
+        raw_attendances = (
+            raw_progress.get("attendances", {})
+            if isinstance(raw_progress, dict)
+            else {}
+        )
+        raw_course_progress = (
+            raw_progress.get("course_progress", {})
+            if isinstance(raw_progress, dict)
+            else {}
+        )
+        raw_assignments = (
+            raw_progress.get("assignments", {})
+            if isinstance(raw_progress, dict)
+            else {}
+        )
+
+        attendance_items: list[dict[str, str]] = []
+        for raw_item in raw_attendances.get("items", []):
+            if not isinstance(raw_item, dict):
+                continue
+            attendance_items.append(
+                build_attendance_item(
+                    str(raw_item.get("event", "")),
+                    str(raw_item.get("status", "")),
+                )
+            )
+
+        course_items: list[dict[str, str]] = []
+        for raw_item in raw_course_progress.get("items", []):
+            if not isinstance(raw_item, dict):
+                continue
+            course_items.append(
+                {
+                    "course": normalize_space(str(raw_item.get("course", ""))),
+                    "progress_percent": normalize_space(
+                        str(raw_item.get("progress_percent", ""))
+                    ),
+                    "status": normalize_space(str(raw_item.get("status", ""))),
+                }
+            )
+
+        assignment_items: list[dict[str, str]] = []
+        for raw_item in raw_assignments.get("items", []):
+            if not isinstance(raw_item, dict):
+                continue
+            assignment_items.append(
+                {
+                    "assignment": normalize_space(
+                        str(raw_item.get("assignment", ""))
+                    ),
+                    "status": normalize_space(str(raw_item.get("status", ""))),
+                }
+            )
+
+        students.append(
+            {
+                "profile": {
+                    "name": normalize_space(
+                        str(raw_profile.get("name", ""))
+                    ),
+                    "profile_link": normalize_space(
+                        str(raw_profile.get("profile_link", ""))
+                    ),
+                    "photo_url": normalize_space(
+                        str(raw_profile.get("photo_url", ""))
+                    ),
+                    "status_badge": normalize_space(
+                        str(raw_profile.get("status_badge", ""))
+                    ),
+                    "university": normalize_space(
+                        str(raw_profile.get("university", ""))
+                    ),
+                    "major": normalize_space(
+                        str(raw_profile.get("major", ""))
+                    ),
+                    "facilitator": normalize_space(
+                        str(raw_profile.get("facilitator", ""))
+                    ),
+                    "lecturer": normalize_space(
+                        str(raw_profile.get("lecturer", ""))
+                    ),
+                },
+                "progress": {
+                    "attendances": {
+                        "last_updated": normalize_space(
+                            str(raw_attendances.get("last_updated", ""))
+                        ),
+                        "items": attendance_items,
+                        "fallback_text_if_empty": normalize_space(
+                            str(
+                                raw_attendances.get(
+                                    "fallback_text_if_empty", ""
+                                )
+                            )
+                        ),
+                        "item_schema": {
+                            "event": "string",
+                            "status": "string",
+                        },
+                    },
+                    "course_progress": {
+                        "last_updated": normalize_space(
+                            str(raw_course_progress.get("last_updated", ""))
+                        ),
+                        "items": course_items,
+                    },
+                    "assignments": {
+                        "last_updated": normalize_space(
+                            str(raw_assignments.get("last_updated", ""))
+                        ),
+                        "items": assignment_items,
+                        "fallback_text_if_empty": normalize_space(
+                            str(
+                                raw_assignments.get(
+                                    "fallback_text_if_empty", ""
+                                )
+                            )
+                        ),
+                    },
+                    "daily_checkins": {
+                        "items": [],
+                    },
+                },
+            }
+        )
+
+    return students
 
 
 def extract_mentor_from_dom(

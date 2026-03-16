@@ -12,6 +12,7 @@ from selenium.common.exceptions import NoSuchElementException
 
 from .dom_extractors import (
     extract_mentor_from_dom,
+    extract_students_from_dom,
     normalize_space,
     parse_student,
     student_blocks,
@@ -346,17 +347,33 @@ def build_export_json(
     click_all_buttons_by_keyword(driver, "show all attend")
     time.sleep(0.2)
 
-    source = driver.page_source
-    blocks = student_blocks(source)
-    if not blocks:
-        raise NoSuchElementException(
-            "Tidak ada student block yang bisa diekstrak."
+    try:
+        students = [
+            ensure_student_progress_structure(student)
+            for student in extract_students_from_dom(driver)
+        ]
+    except Exception as error:
+        LOGGER.warning(
+            "student_dom_extract.failed fallback=regex error=%s",
+            error,
         )
+        students = []
 
-    students = [
-        ensure_student_progress_structure(parse_student(block))
-        for block in blocks
-    ]
+    if not students:
+        source = driver.page_source
+        blocks = student_blocks(source)
+        if not blocks:
+            raise NoSuchElementException(
+                "Tidak ada student block yang bisa diekstrak."
+            )
+
+        students = [
+            ensure_student_progress_structure(parse_student(block))
+            for block in blocks
+        ]
+        LOGGER.info("student_extract.mode mode=regex_fallback")
+    else:
+        LOGGER.info("student_extract.mode mode=dom")
 
     fast_attendance_by_student: list[dict] | None = None
     fast_daily_by_student: list[list[dict]] | None = None
